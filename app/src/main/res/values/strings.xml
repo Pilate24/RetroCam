@@ -1,0 +1,13 @@
+<resources>
+    <string name="app_name">RetroCam</string>
+    <string name="shutter">Take photo</string>
+    <string name="saved_toast">Saved to Pictures/RetroCam</string>
+    <string name="no_presets">No filter presets found in assets</string>
+    <string name="intensity">Filter intensity</string>
+    <string name="intensity_label">%1$s · %2$d%%</string>
+    <string name="gallery_title">Gallery</string>
+    <string name="gallery_empty">No shots yet.\nPhotos you take appear here.</string>
+    <string name="back">Back</string>
+    <string name="photo">Photo</string>
+    <string name="share_photo">Share photo</string>
+</resources>

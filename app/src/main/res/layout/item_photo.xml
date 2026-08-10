@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ImageView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/photoThumb"
+    android:layout_width="match_parent"
+    android:layout_height="120dp"
+    android:layout_margin="2dp"
+    android:background="#FF161616"
+    android:contentDescription="@string/photo"
+    android:foreground="?android:attr/selectableItemBackground"
+    android:scaleType="centerCrop" />

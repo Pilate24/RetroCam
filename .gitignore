@@ -1,0 +1,29 @@
+# Android / Gradle build output
+build/
+.gradle/
+*.apk
+*.aab
+*.ap_
+*.dex
+local.properties
+
+# Android Studio / IntelliJ
+.idea/
+*.iml
+.cxx/
+captures/
+
+# Claude Code per-machine settings (contains local paths)
+.claude/settings.local.json
+
+# OS noise
+.DS_Store
+Thumbs.db
+
+# Keystores — never commit signing material
+*.jks
+*.keystore
+
+# Python
+__pycache__/
+*.pyc

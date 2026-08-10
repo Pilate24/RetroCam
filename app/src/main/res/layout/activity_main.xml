@@ -1,0 +1,82 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <SurfaceView
+        android:id="@+id/viewFinder"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="bottom"
+        android:fitsSystemWindows="true"
+        android:orientation="vertical"
+        android:paddingBottom="20dp">
+
+        <TextView
+            android:id="@+id/intensityLabel"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:shadowColor="#CC000000"
+            android:shadowRadius="4"
+            android:textColor="#CCFFFFFF"
+            android:textSize="12sp" />
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/intensitySlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="32dp"
+            android:layout_marginEnd="32dp"
+            android:contentDescription="@string/intensity"
+            android:stepSize="0.05"
+            android:value="1.0"
+            android:valueFrom="0.0"
+            android:valueTo="1.0"
+            app:labelBehavior="gone" />
+
+        <!-- The centred item is the active look; tapping any item scrolls it to centre. -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/filterCarousel"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="14dp"
+            android:clipToPadding="false"
+            android:orientation="horizontal"
+            android:overScrollMode="never" />
+
+        <FrameLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content">
+
+            <ImageButton
+                android:id="@+id/galleryButton"
+                android:layout_width="52dp"
+                android:layout_height="52dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="36dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/gallery_title"
+                android:padding="12dp"
+                android:src="@drawable/ic_gallery"
+                android:tint="#FFFFFFFF" />
+
+            <ImageButton
+                android:id="@+id/shutterButton"
+                android:layout_width="72dp"
+                android:layout_height="72dp"
+                android:layout_gravity="center_horizontal"
+                android:background="@drawable/shutter_button"
+                android:contentDescription="@string/shutter" />
+        </FrameLayout>
+
+    </LinearLayout>
+
+</FrameLayout>

@@ -1,0 +1,19 @@
+{
+  "name": "Disposable",
+  "lut": "luts/disposable.png",
+  "lutIntensity": 1.0,
+  "grainAmount": 0.13,
+  "vignetteAmount": 0.75,
+  "chromaAmount": 0.12,
+  "halationAmount": 0.30,
+  "halationRadius": 0.6,
+  "halationThreshold": 0.78,
+  "flashAmount": 0.16,
+  "flashHardness": 1.6,
+  "dateStamp": {
+    "color": "#FFFF7A18",
+    "size": 0.038,
+    "format": "yyyy M d",
+    "glow": true
+  }
+}

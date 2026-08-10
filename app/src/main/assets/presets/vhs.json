@@ -1,0 +1,20 @@
+{
+  "name": "VHS",
+  "lut": "luts/vhs.png",
+  "aspect": "4:3",
+  "lutIntensity": 1.0,
+  "grainAmount": 0.09,
+  "vignetteAmount": 0.45,
+  "chromaAmount": 0.35,
+  "scanlineAmount": 0.22,
+  "scanlineCount": 320.0,
+  "syncBarAmount": 0.10,
+  "syncBarWidth": 0.035,
+  "syncBarShift": 0.012,
+  "dateStamp": {
+    "color": "#FFEFEFEF",
+    "size": 0.040,
+    "format": "MMM dd yyyy",
+    "glow": false
+  }
+}

@@ -1,0 +1,4 @@
+<resources>
+    <!-- Shared by item_filter.xml and MainActivity's centring padding — they must agree. -->
+    <dimen name="filter_item_width">104dp</dimen>
+</resources>

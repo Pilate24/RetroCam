@@ -1,0 +1,15 @@
+{
+  "name": "Kodak",
+  "lut": "luts/kodak.png",
+  "lutIntensity": 1.0,
+  "grainAmount": 0.045,
+  "vignetteAmount": 0.30,
+  "chromaAmount": 0.0,
+  "halationAmount": 0.35,
+  "halationRadius": 0.8,
+  "halationThreshold": 0.72,
+  "leakAmount": 0.08,
+  "leakX": 1.08,
+  "leakY": 0.22,
+  "leakRadius": 0.5
+}

@@ -1,0 +1,22 @@
+{
+  "name": "Polaroid",
+  "lut": "luts/polaroid.png",
+  "aspect": "1:1",
+  "lutIntensity": 1.0,
+  "grainAmount": 0.05,
+  "vignetteAmount": 0.18,
+  "chromaAmount": 0.06,
+  "halationAmount": 0.22,
+  "halationRadius": 1.4,
+  "halationThreshold": 0.62,
+  "leakAmount": 0.10,
+  "leakX": 1.05,
+  "leakY": 0.15,
+  "leakRadius": 0.55,
+  "frame": {
+    "color": "#FFFBF8F0",
+    "side": 0.062,
+    "top": 0.062,
+    "bottom": 0.210
+  }
+}

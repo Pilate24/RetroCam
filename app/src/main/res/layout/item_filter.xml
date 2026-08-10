@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Fixed width: the carousel centres items by padding both ends with (width - itemWidth) / 2,
+     which only lands exactly on centre when every item is the same size. -->
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/filterName"
+    android:layout_width="@dimen/filter_item_width"
+    android:layout_height="match_parent"
+    android:background="?android:attr/selectableItemBackground"
+    android:ellipsize="end"
+    android:gravity="center"
+    android:maxLines="1"
+    android:shadowColor="#CC000000"
+    android:shadowDx="0"
+    android:shadowDy="1"
+    android:shadowRadius="4"
+    android:textSize="15sp"
+    android:textStyle="bold" />
