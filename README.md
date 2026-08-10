@@ -2,6 +2,8 @@
 
 CameraX + AGSL (`RuntimeShader`) retro camera. minSdk 33 (Android 13+).
 
+**[Download the APK](https://github.com/Pilate24/RetroCam/releases/latest)** — debug build, sideload only. Read the "Verified" section below first: Phases 4 and 5 have not been run on a device.
+
 ## What's here
 
 - `MainActivity.kt` — permission flow, CameraX binding, live filtered preview, filter carousel, shutter -> save to `Pictures/RetroCam`.
