@@ -2,7 +2,7 @@
 
 CameraX + AGSL (`RuntimeShader`) retro camera. minSdk 33 (Android 13+).
 
-**[Download the APK](https://github.com/Pilate24/RetroCam/releases/latest)** — debug build, sideload only. Read the "Verified" section below first: Phases 4 and 5 have not been run on a device.
+**[Download the APK](https://github.com/Pilate24/RetroCam/releases/latest)** — debug build, sideload only. 137 filters, camera emulation, face detection, zoom and tap-to-focus. See "Verified" below for what has actually been measured on a device.
 
 ## What's here
 
