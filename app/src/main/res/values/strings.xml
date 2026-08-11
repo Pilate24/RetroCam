@@ -28,6 +28,7 @@
     <string name="compare_hint">The same frame through every camera. Tap one to apply it.</string>
     <string name="compare_empty">Point the camera at something first, then try again.</string>
     <string name="compare_waiting">Hold still…</string>
+    <string name="more_options">More options</string>
     <string name="surprise">Surprise mode</string>
     <string name="surprise_on">Surprise mode on — each shot gets a random filter</string>
     <string name="surprise_off">Surprise mode off</string>

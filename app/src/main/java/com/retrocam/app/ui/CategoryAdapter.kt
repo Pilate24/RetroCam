@@ -49,7 +49,7 @@ class CategoryAdapter(
     }
 
     private companion object {
-        const val COLOR_SELECTED = Color.BLACK
-        val COLOR_IDLE = Color.argb(190, 255, 255, 255)
+        val COLOR_SELECTED = Color.parseColor("#FF1A1613")
+        val COLOR_IDLE = Color.parseColor("#8CF2E4CE")
     }
 }

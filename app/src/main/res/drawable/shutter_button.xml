@@ -1,20 +1,30 @@
 <?xml version="1.0" encoding="utf-8"?>
+<!-- Mechanical shutter release: outer ring, dark gap, warm centre disc. -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item>
         <shape android:shape="oval">
-            <solid android:color="#33FFFFFF" />
             <stroke
                 android:width="3dp"
-                android:color="#FFFFFFFF" />
+                android:color="@color/shutter_ring" />
+            <solid android:color="#22000000" />
         </shape>
     </item>
     <item
-        android:left="8dp"
-        android:top="8dp"
-        android:right="8dp"
-        android:bottom="8dp">
+        android:left="7dp"
+        android:top="7dp"
+        android:right="7dp"
+        android:bottom="7dp">
         <shape android:shape="oval">
-            <solid android:color="#FFFFFFFF" />
+            <solid android:color="@color/readout" />
+        </shape>
+    </item>
+    <item
+        android:left="24dp"
+        android:top="24dp"
+        android:right="24dp"
+        android:bottom="24dp">
+        <shape android:shape="oval">
+            <solid android:color="@color/amber_faint" />
         </shape>
     </item>
 </layer-list>

@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      Warm amber on near-black: the palette of a film camera's LCD and its body, rather than the
+      blue-white of a phone UI. Everything interactive is amber; everything passive is warm grey,
+      so "what can I touch" reads without needing borders.
+    -->
+    <color name="amber">#FFE8A33D</color>
+    <color name="amber_dim">#99E8A33D</color>
+    <color name="amber_faint">#33E8A33D</color>
+
+    <color name="body">#F21A1613</color>
+    <color name="body_edge">#33FFD9A0</color>
+
+    <color name="readout">#FFF2E4CE</color>
+    <color name="readout_dim">#8CF2E4CE</color>
+
+    <color name="shutter_ring">#FFF2E4CE</color>
+    <color name="frame_line">#40F2E4CE</color>
+</resources>

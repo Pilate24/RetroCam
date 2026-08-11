@@ -40,6 +40,7 @@ class FilterCarouselAdapter(
 
     class Holder(view: View) : RecyclerView.ViewHolder(view) {
         val thumb: ImageView = view.findViewById(R.id.filterThumb)
+        val frame: View = view.findViewById(R.id.filterThumbFrame)
         val label: TextView = view.findViewById(R.id.filterName)
     }
 
@@ -53,10 +54,13 @@ class FilterCarouselAdapter(
         val isSelected = position == selectedPosition
 
         holder.label.text = preset.name
+        // Selection is carried by the amber film-frame around the thumbnail, so the label can stay
+        // quiet — the picture is what you're choosing between, not the words.
+        holder.frame.isSelected = isSelected
         holder.label.setTextColor(if (isSelected) COLOR_SELECTED else COLOR_IDLE)
-        holder.itemView.alpha = if (isSelected) 1.0f else 0.72f
-        holder.itemView.scaleX = if (isSelected) 1.0f else 0.94f
-        holder.itemView.scaleY = if (isSelected) 1.0f else 0.94f
+        holder.itemView.alpha = if (isSelected) 1.0f else 0.6f
+        holder.itemView.scaleX = if (isSelected) 1.0f else 0.9f
+        holder.itemView.scaleY = if (isSelected) 1.0f else 0.9f
         holder.itemView.setOnClickListener {
             val current = holder.bindingAdapterPosition
             if (current != RecyclerView.NO_POSITION) onItemClick(current)
@@ -82,7 +86,7 @@ class FilterCarouselAdapter(
     }
 
     private companion object {
-        const val COLOR_SELECTED = Color.WHITE
-        val COLOR_IDLE = Color.argb(150, 255, 255, 255)
+        val COLOR_SELECTED = Color.parseColor("#FFE8A33D")
+        val COLOR_IDLE = Color.parseColor("#8CF2E4CE")
     }
 }

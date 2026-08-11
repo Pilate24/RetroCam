@@ -20,15 +20,23 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="120dp"
+        android:layout_gravity="top"
+        android:background="@drawable/scrim_top" />
+
     <LinearLayout
         android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="top"
         android:fitsSystemWindows="true"
-        android:gravity="center_horizontal"
+        android:gravity="center_vertical"
         android:orientation="horizontal"
-        android:paddingTop="6dp">
+        android:paddingStart="10dp"
+        android:paddingTop="4dp"
+        android:paddingEnd="10dp">
 
         <ImageButton
             android:id="@+id/flashButton"
@@ -47,23 +55,17 @@
             style="@style/TopBarLabel"
             android:contentDescription="@string/aspect_ratio" />
 
-        <ImageButton
-            android:id="@+id/gridButton"
-            style="@style/TopBarButton"
-            android:contentDescription="@string/grid"
-            android:src="@drawable/ic_grid" />
+        <Space
+            android:layout_width="0dp"
+            android:layout_height="1dp"
+            android:layout_weight="1" />
 
+        <!-- Grid, compare and surprise live in here: reached less often than flash or timer. -->
         <ImageButton
-            android:id="@+id/compareButton"
+            android:id="@+id/overflowButton"
             style="@style/TopBarButton"
-            android:contentDescription="@string/compare_title"
-            android:src="@drawable/ic_compare" />
-
-        <ImageButton
-            android:id="@+id/surpriseButton"
-            style="@style/TopBarButton"
-            android:contentDescription="@string/surprise"
-            android:src="@drawable/ic_shuffle" />
+            android:contentDescription="@string/more_options"
+            android:src="@drawable/ic_more" />
     </LinearLayout>
 
     <TextView
@@ -71,16 +73,18 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
-        android:layout_marginTop="72dp"
+        android:layout_marginTop="76dp"
         android:alpha="0"
         android:background="@drawable/zoom_pill"
+        android:fontFamily="monospace"
+        android:letterSpacing="0.12"
         android:paddingStart="12dp"
         android:paddingTop="4dp"
         android:paddingEnd="12dp"
         android:paddingBottom="4dp"
-        android:textColor="#FFFFFFFF"
-        android:textSize="12sp"
-        android:textStyle="bold" />
+        android:textAllCaps="true"
+        android:textColor="@color/amber"
+        android:textSize="11sp" />
 
     <TextView
         android:id="@+id/countdownLabel"
@@ -88,11 +92,12 @@
         android:layout_height="wrap_content"
         android:layout_gravity="center"
         android:alpha="0"
+        android:fontFamily="monospace"
         android:shadowColor="#CC000000"
         android:shadowDx="0"
         android:shadowDy="2"
         android:shadowRadius="10"
-        android:textColor="#FFFFFFFF"
+        android:textColor="@color/readout"
         android:textSize="76sp"
         android:textStyle="bold" />
 
@@ -108,54 +113,76 @@
         android:layout_width="wrap_content"
         android:layout_height="wrap_content"
         android:layout_gravity="center_horizontal"
-        android:layout_marginTop="28dp"
+        android:layout_marginTop="112dp"
         android:alpha="0"
         android:background="@drawable/zoom_pill"
+        android:fontFamily="monospace"
         android:paddingStart="14dp"
-        android:paddingTop="6dp"
+        android:paddingTop="5dp"
         android:paddingEnd="14dp"
-        android:paddingBottom="6dp"
-        android:textColor="#FFFFFFFF"
-        android:textSize="14sp"
-        android:textStyle="bold" />
+        android:paddingBottom="5dp"
+        android:textColor="@color/readout"
+        android:textSize="13sp" />
 
+    <!-- The camera body. Kept as short as it can be: every dp here covers live image. -->
     <LinearLayout
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
+        android:background="@drawable/camera_body"
         android:fitsSystemWindows="true"
         android:orientation="vertical"
-        android:paddingBottom="20dp">
+        android:paddingTop="10dp"
+        android:paddingBottom="12dp">
 
-        <TextView
-            android:id="@+id/intensityLabel"
+        <!-- Film-counter readout. Tapping it reveals the intensity dial. -->
+        <LinearLayout
+            android:id="@+id/readoutRow"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:shadowColor="#CC000000"
-            android:shadowRadius="4"
-            android:textColor="#CCFFFFFF"
-            android:textSize="12sp" />
+            android:background="@drawable/readout_bg"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="10dp"
+            android:paddingTop="3dp"
+            android:paddingEnd="10dp"
+            android:paddingBottom="3dp">
+
+            <TextView
+                android:id="@+id/intensityLabel"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.08"
+                android:textAllCaps="true"
+                android:textColor="@color/amber"
+                android:textSize="11sp" />
+        </LinearLayout>
 
         <com.google.android.material.slider.Slider
             android:id="@+id/intensitySlider"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginStart="32dp"
-            android:layout_marginEnd="32dp"
+            android:layout_marginStart="28dp"
+            android:layout_marginEnd="28dp"
             android:contentDescription="@string/intensity"
             android:stepSize="0.05"
             android:value="1.0"
             android:valueFrom="0.0"
             android:valueTo="1.0"
-            app:labelBehavior="gone" />
+            android:visibility="gone"
+            app:labelBehavior="gone"
+            app:thumbColor="@color/amber"
+            app:trackColorActive="@color/amber"
+            app:trackColorInactive="@color/amber_faint" />
 
         <!-- Filters by category. Selection here only narrows the carousel below. -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/categoryTabs"
             android:layout_width="match_parent"
-            android:layout_height="30dp"
-            android:layout_marginTop="4dp"
+            android:layout_height="26dp"
+            android:layout_marginTop="8dp"
             android:clipToPadding="false"
             android:orientation="horizontal"
             android:overScrollMode="never"
@@ -166,33 +193,33 @@
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/filterCarousel"
             android:layout_width="match_parent"
-            android:layout_height="86dp"
+            android:layout_height="74dp"
             android:layout_marginTop="6dp"
-            android:layout_marginBottom="10dp"
             android:clipToPadding="false"
             android:orientation="horizontal"
             android:overScrollMode="never" />
 
         <FrameLayout
             android:layout_width="match_parent"
-            android:layout_height="wrap_content">
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp">
 
             <ImageButton
                 android:id="@+id/galleryButton"
-                android:layout_width="52dp"
-                android:layout_height="52dp"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
                 android:layout_gravity="start|center_vertical"
-                android:layout_marginStart="36dp"
+                android:layout_marginStart="34dp"
                 android:background="?android:attr/selectableItemBackgroundBorderless"
                 android:contentDescription="@string/gallery_title"
-                android:padding="12dp"
+                android:padding="10dp"
                 android:src="@drawable/ic_gallery"
-                android:tint="#FFFFFFFF" />
+                android:tint="@color/readout" />
 
             <ImageButton
                 android:id="@+id/shutterButton"
-                android:layout_width="72dp"
-                android:layout_height="72dp"
+                android:layout_width="66dp"
+                android:layout_height="66dp"
                 android:layout_gravity="center_horizontal"
                 android:background="@drawable/shutter_button"
                 android:contentDescription="@string/shutter" />

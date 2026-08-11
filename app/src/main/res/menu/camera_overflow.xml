@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="utf-8"?>
+<menu xmlns:android="http://schemas.android.com/apk/res/android">
+    <item
+        android:id="@+id/menuGrid"
+        android:checkable="true"
+        android:title="@string/grid" />
+    <item
+        android:id="@+id/menuSurprise"
+        android:checkable="true"
+        android:title="@string/surprise" />
+    <item
+        android:id="@+id/menuCompare"
+        android:title="@string/compare_title" />
+</menu>

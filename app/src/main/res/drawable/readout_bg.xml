@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The film-counter window: a recessed amber panel the readout sits inside. -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#26000000" />
+    <stroke
+        android:width="1dp"
+        android:color="@color/amber_faint" />
+    <corners android:radius="5dp" />
+</shape>

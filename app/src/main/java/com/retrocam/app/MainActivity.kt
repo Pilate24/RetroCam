@@ -16,7 +16,9 @@ import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
 import android.view.View
+import android.widget.PopupMenu
 import android.widget.Toast
+import androidx.core.view.isVisible
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
@@ -236,12 +238,35 @@ class MainActivity : AppCompatActivity() {
         if (delta != 0) carousel.smoothScrollBy(delta, 0)
     }
 
+    /**
+     * The dial stays out of the way until asked for. It's a secondary control — you pick a look far
+     * more often than you dial its strength — and at 48dp tall it was permanently covering live
+     * image for something most shots never touch.
+     */
     private fun setUpIntensitySlider() {
         binding.intensitySlider.addOnChangeListener { _, value, _ ->
             intensity = value
             refreshActivePreset()
+            revealIntensity()
+        }
+        // The readout doubles as the handle: tapping the percentage is how you get to change it.
+        binding.readoutRow.setOnClickListener {
+            if (binding.intensitySlider.isVisible) hideIntensity() else revealIntensity()
         }
     }
+
+    private fun revealIntensity() {
+        binding.intensitySlider.isVisible = true
+        binding.readoutRow.removeCallbacks(hideIntensityRunnable)
+        binding.readoutRow.postDelayed(hideIntensityRunnable, INTENSITY_VISIBLE_MS)
+    }
+
+    private fun hideIntensity() {
+        binding.readoutRow.removeCallbacks(hideIntensityRunnable)
+        binding.intensitySlider.isVisible = false
+    }
+
+    private val hideIntensityRunnable = Runnable { binding.intensitySlider.isVisible = false }
 
     private fun selectPreset(position: Int) {
         if (position !in visiblePresets.indices) return
@@ -358,31 +383,56 @@ class MainActivity : AppCompatActivity() {
         }
         binding.aspectButton.text = aspect.label
 
-        binding.gridButton.setOnClickListener {
-            val showing = binding.gridOverlay.visibility == View.VISIBLE
-            binding.gridOverlay.visibility = if (showing) View.GONE else View.VISIBLE
-            binding.gridButton.alpha = if (showing) 0.65f else 1f
-        }
-        binding.gridButton.alpha = 0.65f
+        binding.overflowButton.setOnClickListener { showOverflow(it) }
+    }
 
-        binding.surpriseButton.setOnClickListener {
-            surpriseMode = !surpriseMode
-            binding.surpriseButton.alpha = if (surpriseMode) 1f else 0.65f
-            setStatus(if (surpriseMode) R.string.surprise_status else R.string.status_ready)
-            toast(getString(if (surpriseMode) R.string.surprise_on else R.string.surprise_off))
-        }
-        binding.surpriseButton.alpha = 0.65f
+    /** Grid, surprise and compare: wanted less often than flash or timer, so one tap deeper. */
+    private fun showOverflow(anchor: View) {
+        PopupMenu(this, anchor).apply {
+            menuInflater.inflate(R.menu.camera_overflow, menu)
+            menu.findItem(R.id.menuGrid).isChecked =
+                binding.gridOverlay.visibility == View.VISIBLE
+            menu.findItem(R.id.menuSurprise).isChecked = surpriseMode
 
-        binding.compareButton.setOnClickListener {
-            val frame = latestFrame
-            if (frame == null) {
-                toast(getString(R.string.compare_waiting))
-                return@setOnClickListener
+            setOnMenuItemClickListener { item ->
+                when (item.itemId) {
+                    R.id.menuGrid -> {
+                        val showing = binding.gridOverlay.visibility == View.VISIBLE
+                        binding.gridOverlay.visibility = if (showing) View.GONE else View.VISIBLE
+                        true
+                    }
+                    R.id.menuSurprise -> {
+                        surpriseMode = !surpriseMode
+                        setStatus(
+                            if (surpriseMode) R.string.surprise_status else R.string.status_ready
+                        )
+                        toast(
+                            getString(
+                                if (surpriseMode) R.string.surprise_on else R.string.surprise_off
+                            )
+                        )
+                        true
+                    }
+                    R.id.menuCompare -> {
+                        openCompare()
+                        true
+                    }
+                    else -> false
+                }
             }
-            CompareFrame.set(frame)
-            latestFrame = null   // ownership moves to CompareFrame
-            compareLauncher.launch(Intent(this, CompareActivity::class.java))
+            show()
         }
+    }
+
+    private fun openCompare() {
+        val frame = latestFrame
+        if (frame == null) {
+            toast(getString(R.string.compare_waiting))
+            return
+        }
+        CompareFrame.set(frame)
+        latestFrame = null   // ownership moves to CompareFrame
+        compareLauncher.launch(Intent(this, CompareActivity::class.java))
     }
 
     /**
@@ -860,5 +910,6 @@ class MainActivity : AppCompatActivity() {
         private const val FPS_REPORT_NANOS = 3_000_000_000L
         private const val COMPARE_FRAME_NANOS = 1_000_000_000L
         private const val COMPARE_FRAME_WIDTH = 480
+        private const val INTENSITY_VISIBLE_MS = 3500L
     }
 }
