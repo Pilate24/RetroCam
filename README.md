@@ -30,6 +30,44 @@ Zoom is a CameraX **camera-level** control: it is applied as a sensor crop befor
 
 Tap-to-focus is the awkward one. Because the preview letterboxes and the compositor crops and adds borders, a screen tap has to be walked back through **letterbox -> frame border -> aspect crop -> buffer rotation** to reach a sensor coordinate. `OverlayCompositor.layoutFor()` is the single source of truth for that geometry — `compose()` uses it too, so the focus mapping cannot drift from how the frame is actually laid out. Taps on the letterbox or the Polaroid border are ignored rather than focused somewhere outside the picture.
 
+## Camera emulation presets
+
+The **Camera** category holds 64 presets across 16 manufacturers. They are unofficial
+approximations built from published visual characteristics — not reproductions of anyone's colour
+science, and the app makes no claim to be an official profile. Product names used as labels
+(Provia, Velvia, Portra…) are trademarks of their owners; rename them before shipping publicly if
+that matters to you.
+
+What separates one camera from another is **tone curve and channel response**, not a colour cast.
+The relevant knobs:
+
+| Field | Effect |
+|---|---|
+| `highlightRolloff` | Filmic shoulder. Highlights compress toward white instead of clipping — most of what "cinematic" means. |
+| `shadowResponse` | Toe. Positive deepens shadows, negative lifts them. |
+| `whites` / `blacks` | The very ends of the curve, distinct from `highlights`/`shadows` recovery. |
+| `redResponse` / `greenResponse` / `blueResponse` | Per-channel gamma. Fuji's greens and Canon's reds are channel curves, not a temperature nudge. |
+| `skinSaturation`, `greenSaturation`, `blueSaturation` (+ `…Hue`) | Targeted HSL on the three bands that carry camera character: skin, foliage, sky. |
+| `shadowTint` / `highlightTint` (+ `…Amount`) | Split toning. |
+| `microContrast` | Narrower radius than `clarity` — the "bite" of a Leica or Ricoh rendering, without clarity's haloes. |
+
+`tools/verify_camera_presets.py` replicates the tone and colour stages and measures every preset
+against reference colours (skin at three tones, foliage, sky, red, a neutral ramp):
+
+```bash
+py tools/verify_camera_presets.py app/src/main/assets/presets/camera_pack.json
+```
+
+This exists because "distinct parameters" is not the requirement — "looks noticeably different"
+is, and they are not the same thing. It caught three Cinematic presets rendering within 1.7/255 of
+each other, which would have made them three identical entries in the picker. Current floor: every
+camera is ≥5.9/255 from the untouched image and ≥2.6/255 from every other camera.
+
+**Compare mode** (the split-rectangle button in the top bar) freezes one preview frame and grades
+it through every camera at once; tap a tile to apply it. The frame is frozen deliberately —
+against a live preview each tile would show a different moment, and the scene change would swamp
+the difference between renderings.
+
 ## Adding a filter
 
 No code, no new shader:
@@ -112,6 +150,11 @@ Run on a Samsung SM-S711B (Android 14), checked against logcat rather than by ey
 - **Intensity slider** drives the label and active preset across its range (5% / 50% / 100%).
 - **Gallery** lists saved shots in a 3-column grid and opens without crashing.
 - **Filter selection** is deterministic across restarts (four runs, all "Original").
+- **137 presets** load with zero skipped, and the extended shader compiles on-device with all its uniforms.
+- **Camera presets** hold frame rate: 30.2 fps on Sony Vivid, 29.9 on Canon Warm, against a 27.4–30.1 baseline. Zero dropped frames.
+- **Camera category** filters the carousel correctly, and capture writes `RetroCam_cam_sony_natural_*.jpg` at full 3060×4080.
+- **Compare mode** opens, renders tiles with Original pinned first, and tapping a tile applies that camera (verified Original → Sony Vivid).
+- **Face detection** reports supported, max 16 faces.
 
 Still unverified:
 
