@@ -10,4 +10,6 @@
     <string name="back">Back</string>
     <string name="photo">Photo</string>
     <string name="share_photo">Share photo</string>
+    <string name="zoom_label">%1$.1f×</string>
+    <string name="viewfinder">Viewfinder. Pinch to zoom, double tap to toggle zoom.</string>
 </resources>

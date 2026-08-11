@@ -11,9 +11,13 @@ import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
 import android.util.Log
+import android.view.GestureDetector
+import android.view.MotionEvent
+import android.view.ScaleGestureDetector
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
@@ -48,6 +52,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var cameraExecutor: ExecutorService
 
     private var imageCapture: ImageCapture? = null
+    private var camera: Camera? = null
     private var previewRenderer: ShaderRenderer? = null
     private val startTimeNanos = System.nanoTime()
 
@@ -99,6 +104,7 @@ class MainActivity : AppCompatActivity() {
         }
         setUpCarousel()
         setUpIntensitySlider()
+        setUpZoomGestures()
         refreshActivePreset()
 
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
@@ -200,11 +206,83 @@ class MainActivity : AppCompatActivity() {
 
             try {
                 provider.unbindAll()
-                provider.bindToLifecycle(this, CameraSelector.DEFAULT_BACK_CAMERA, analysis, capture)
+                camera = provider.bindToLifecycle(
+                    this, CameraSelector.DEFAULT_BACK_CAMERA, analysis, capture
+                )
+                observeZoom()
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    // --- zoom --------------------------------------------------------------
+
+    /**
+     * Zoom is a camera-level control — CameraX applies it as a sensor crop before either use case
+     * sees a frame — so the preview and the capture zoom together and stay WYSIWYG for free.
+     */
+    private fun setUpZoomGestures() {
+        val scaleDetector = ScaleGestureDetector(
+            this,
+            object : ScaleGestureDetector.SimpleOnScaleGestureListener() {
+                override fun onScale(detector: ScaleGestureDetector): Boolean {
+                    val current = camera?.cameraInfo?.zoomState?.value?.zoomRatio ?: return true
+                    applyZoom(current * detector.scaleFactor)
+                    return true
+                }
+            }
+        )
+
+        val tapDetector = GestureDetector(
+            this,
+            object : GestureDetector.SimpleOnGestureListener() {
+                override fun onDoubleTap(e: MotionEvent): Boolean {
+                    val state = camera?.cameraInfo?.zoomState?.value ?: return false
+                    // Snap back to wide if we're zoomed at all, otherwise jump to 2x.
+                    val zoomedIn = state.zoomRatio > state.minZoomRatio * 1.1f
+                    applyZoom(
+                        if (zoomedIn) state.minZoomRatio
+                        else minOf(DOUBLE_TAP_ZOOM, state.maxZoomRatio)
+                    )
+                    return true
+                }
+            }
+        )
+
+        binding.viewFinder.setOnTouchListener { view, event ->
+            scaleDetector.onTouchEvent(event)
+            tapDetector.onTouchEvent(event)
+            if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
+            true
+        }
+    }
+
+    private fun applyZoom(ratio: Float) {
+        val camera = this.camera ?: return
+        val state = camera.cameraInfo.zoomState.value ?: return
+        camera.cameraControl.setZoomRatio(
+            ratio.coerceIn(state.minZoomRatio, state.maxZoomRatio)
+        )
+    }
+
+    private fun observeZoom() {
+        camera?.cameraInfo?.zoomState?.observe(this) { state ->
+            binding.zoomLabel.text = getString(R.string.zoom_label, state.zoomRatio)
+            flashZoomLabel()
+        }
+    }
+
+    /** Show the ratio while the user is zooming, then get out of the way. */
+    private fun flashZoomLabel() {
+        val label = binding.zoomLabel
+        label.removeCallbacks(hideZoomLabel)
+        label.animate().alpha(1f).setDuration(90).start()
+        label.postDelayed(hideZoomLabel, ZOOM_LABEL_MS)
+    }
+
+    private val hideZoomLabel = Runnable {
+        binding.zoomLabel.animate().alpha(0f).setDuration(260).start()
     }
 
     private fun processFrame(imageProxy: ImageProxy) {
@@ -345,5 +423,7 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val TAG = "RetroCam"
+        private const val DOUBLE_TAP_ZOOM = 2f
+        private const val ZOOM_LABEL_MS = 1400L
     }
 }

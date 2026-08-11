@@ -6,7 +6,7 @@ CameraX + AGSL (`RuntimeShader`) retro camera. minSdk 33 (Android 13+).
 
 ## What's here
 
-- `MainActivity.kt` — permission flow, CameraX binding, live filtered preview, filter carousel, shutter -> save to `Pictures/RetroCam`.
+- `MainActivity.kt` — permission flow, CameraX binding, live filtered preview, filter carousel, zoom gestures, shutter -> save to `Pictures/RetroCam`.
 - `filter/FilterShader.kt` — the one AGSL program every look runs through.
 - `filter/OverlayCompositor.kt` — the overlays that change the frame's *shape*: aspect crop, the Polaroid border, the burned-in date stamp.
 - `filter/FilterPreset.kt` — the preset data class and the loader that reads `assets/presets/`.
@@ -15,6 +15,17 @@ CameraX + AGSL (`RuntimeShader`) retro camera. minSdk 33 (Android 13+).
 - `gallery/` — `PhotoStore` (MediaStore query scoped to our own folder), `GalleryActivity` (thumbnail grid), `ViewerActivity` (full size + share sheet).
 
 `RuntimeShader` only runs on a hardware-accelerated canvas, and a Canvas backed directly by a Bitmap is software-only — hence the `ImageReader` round-trip. Note that `unlockCanvasAndPost()` only *queues* the frame; the buffer reaches the reader asynchronously, so `ShaderRenderer` waits on `setOnImageAvailableListener` before acquiring. Acquiring immediately after the post races the GPU and returns null on every frame.
+
+## Controls
+
+| Gesture | Action |
+|---|---|
+| Pinch on the viewfinder | Zoom, clamped to the sensor's own range |
+| Double tap the viewfinder | Toggle between wide and 2× |
+| Swipe the carousel | Change look (the centred one is active) |
+| Slider | Filter intensity |
+
+Zoom is a CameraX **camera-level** control: it is applied as a sensor crop before either use case receives a frame, so `ImageAnalysis` and `ImageCapture` zoom together and WYSIWYG holds without extra work. Doing it as a shader or view transform instead would have zoomed only the preview.
 
 ## Adding a filter
 
