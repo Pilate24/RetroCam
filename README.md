@@ -20,12 +20,15 @@ CameraX + AGSL (`RuntimeShader`) retro camera. minSdk 33 (Android 13+).
 
 | Gesture | Action |
 |---|---|
+| Tap the viewfinder | Focus and meter on that point |
 | Pinch on the viewfinder | Zoom, clamped to the sensor's own range |
 | Double tap the viewfinder | Toggle between wide and 2× |
 | Swipe the carousel | Change look (the centred one is active) |
 | Slider | Filter intensity |
 
 Zoom is a CameraX **camera-level** control: it is applied as a sensor crop before either use case receives a frame, so `ImageAnalysis` and `ImageCapture` zoom together and WYSIWYG holds without extra work. Doing it as a shader or view transform instead would have zoomed only the preview.
+
+Tap-to-focus is the awkward one. Because the preview letterboxes and the compositor crops and adds borders, a screen tap has to be walked back through **letterbox -> frame border -> aspect crop -> buffer rotation** to reach a sensor coordinate. `OverlayCompositor.layoutFor()` is the single source of truth for that geometry — `compose()` uses it too, so the focus mapping cannot drift from how the frame is actually laid out. Taps on the letterbox or the Polaroid border are ignored rather than focused somewhere outside the picture.
 
 ## Adding a filter
 
@@ -101,9 +104,20 @@ Saved files are named `RetroCam_<preset>_<timestamp>.jpg`, so the filename tells
 
 - Phases 1–2 on a physical device (Samsung, Android 14): live filtered preview, shutter, and save, across a background/resume cycle.
 - Phase 3: builds clean; the extended shader compiles on-device at runtime; all five presets load and the carousel centres and highlights correctly.
-- Phase 4: builds clean; presets parse and every referenced LUT resolves.
-- Phase 5: builds clean; the APK carries all five LUTs and preset files, and declares the gallery and viewer activities.
-- **Not yet verified on device:** everything added in Phases 4 and 5 — the shader compiling at runtime, the compositor's crop/border/stamp output, the intensity slider, the gallery, the share sheet, and how any of the looks actually appear. Nothing since Phase 3 has been run.
+Run on a Samsung SM-S711B (Android 14), checked against logcat rather than by eye:
+
+- **Shader** compiles at runtime with all ten uniforms; zero dropped frames across every preset.
+- **Compositor geometry is pixel-exact.** VHS captures come out 3060×2295 (exactly 4:3); Polaroid comes out 3440×3893, which matches the preset maths to the pixel (1:1 crop of 3060, plus 190px side/top and 643px bottom borders).
+- **Tap-to-focus** verified by counting AF triggers with quiet-baseline controls: picture taps fire exactly one, border and letterbox taps fire none, an untouched baseline stays at zero.
+- **Intensity slider** drives the label and active preset across its range (5% / 50% / 100%).
+- **Gallery** lists saved shots in a 3-column grid and opens without crashing.
+- **Filter selection** is deterministic across restarts (four runs, all "Original").
+
+Still unverified:
+
+- **Pinch zoom.** `adb input` can't synthesise a two-finger gesture, and it can't place two taps inside Android's 300 ms double-tap window either, so pinch and double-tap-zoom both need a real finger. The single-tap focus path that shares the same touch listener does work, so the plumbing is exercised.
+- **How anything actually looks.** Everything above is dimensions and log counts. Nobody has judged whether the grades, grain, halation, scanlines or date stamps read well — including whether the date stamp is legible at all.
+- The **share sheet** (needs a human to pick a destination app).
 
 ### Gallery and permissions
 
