@@ -190,6 +190,18 @@ object FilterShader {
             return 1.0 - smoothstep(0.0, width, d);
         }
 
+        /**
+         * Compresses anything above the knee toward white instead of letting the final clamp
+         * flat-clip it. Without this, a punchy preset turns bright areas into featureless white
+         * paste — the difference between a look reading as "strong" and as "broken".
+         */
+        float3 softLimit(float3 c) {
+            const float knee = 0.9;
+            const float range = 1.0 - knee;
+            float3 over = max(c - float3(knee), float3(0.0));
+            return c - over + range * (over / (over + float3(range)));
+        }
+
         float3 brightPass(float3 c, float threshold) {
             float l = dot(c, LUMA);
             return c * (max(l - threshold, 0.0) / max(1.0 - threshold, 0.001));
@@ -289,13 +301,13 @@ object FilterShader {
             if (exposure != 0.0) color *= pow(2.0, exposure);
             if (brightness != 0.0) color += brightness;
             if (temperature != 0.0) {
-                color.r += temperature * 0.18;
-                color.b -= temperature * 0.18;
+                color.r += temperature * 0.32;
+                color.b -= temperature * 0.32;
             }
             if (tint != 0.0) {
-                color.g += tint * 0.14;
-                color.r -= tint * 0.05;
-                color.b -= tint * 0.05;
+                color.g += tint * 0.26;
+                color.r -= tint * 0.09;
+                color.b -= tint * 0.09;
             }
 
             // --- 5. tone curve -------------------------------------------------------------
@@ -356,7 +368,7 @@ object FilterShader {
             }
             if (fade > 0.0) {
                 // Lift the black point the way aged prints do, without touching the highlights.
-                color = mix(color, color * (1.0 - fade * 0.45) + float3(fade * 0.22), 1.0);
+                color = mix(color, color * (1.0 - fade * 0.60) + float3(fade * 0.30), 1.0);
             }
 
             // --- 9. micro contrast, then sharpening ----------------------------------------
@@ -457,7 +469,7 @@ object FilterShader {
                 color *= clamp(1.0 - vignetteAmount * dot(v, v) * 2.0, 0.0, 1.0);
             }
 
-            return half4(half3(clamp(color, float3(0.0), float3(1.0))), 1.0);
+            return half4(half3(clamp(softLimit(color), float3(0.0), float3(1.0))), 1.0);
         }
     """
 }

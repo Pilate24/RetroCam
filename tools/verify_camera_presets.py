@@ -31,14 +31,15 @@ REFERENCE = {
     "highlight": (0.95, 0.93, 0.90),
 }
 
+# Must track PresetRepository.readShaderParams(). If these drift, the measurements are fiction.
 SCALES = {
-    "exposure": 2.0, "brightness": 0.25, "contrast": 0.6, "saturation": 1.0,
-    "temperature": 1.0, "tint": 1.0, "highlights": 0.3, "shadows": 0.3,
-    "whites": 0.35, "blacks": 0.25, "fade": 1.0,
+    "exposure": 2.0, "brightness": 0.35, "contrast": 1.1, "saturation": 1.5,
+    "temperature": 1.0, "tint": 1.0, "highlights": 0.5, "shadows": 0.5,
+    "whites": 0.55, "blacks": 0.45, "fade": 1.0,
     "highlightRolloff": 1.0, "shadowResponse": 0.6,
-    "shadowTintAmount": 0.35, "highlightTintAmount": 0.35,
-    "skinSaturation": 1.0, "skinHue": 0.06, "greenSaturation": 1.0, "greenHue": 0.06,
-    "blueSaturation": 1.0, "blueHue": 0.06,
+    "shadowTintAmount": 0.55, "highlightTintAmount": 0.55,
+    "skinSaturation": 1.5, "skinHue": 0.09, "greenSaturation": 1.5, "greenHue": 0.09,
+    "blueSaturation": 1.5, "blueHue": 0.09,
 }
 
 
@@ -47,7 +48,7 @@ def norm(preset, key):
 
 
 def gamma(preset, key):
-    return 1.0 - preset.get(key, 0) / 100.0 * 0.4
+    return 1.0 - preset.get(key, 0) / 100.0 * 0.55
 
 
 def hex_rgb(s):
@@ -83,9 +84,9 @@ def apply(preset, rgb):
     br = norm(preset, "brightness")
     r, g, b = r + br, g + br, b + br
     t = norm(preset, "temperature")
-    r, b = r + t * 0.18, b - t * 0.18
+    r, b = r + t * 0.32, b - t * 0.32
     ti = norm(preset, "tint")
-    g, r, b = g + ti * 0.14, r - ti * 0.05, b - ti * 0.05
+    g, r, b = g + ti * 0.26, r - ti * 0.09, b - ti * 0.09
 
     # 5. tone curve
     c = norm(preset, "contrast")
@@ -146,9 +147,26 @@ def apply(preset, rgb):
         r, g, b = r + d, g + d, b + d
     fd = norm(preset, "fade")
     if fd:
-        r, g, b = [v * (1 - fd * 0.45) + fd * 0.22 for v in (r, g, b)]
+        r, g, b = [v * (1 - fd * 0.60) + fd * 0.30 for v in (r, g, b)]
 
-    return clamp01(r), clamp01(g), clamp01(b)
+    return tuple(clamp01(v) for v in soft_limit((r, g, b)))
+
+
+def soft_limit(c):
+    """Mirror of FilterShader.softLimit()."""
+    knee, rng = 0.9, 0.1
+    out = []
+    for v in c:
+        over = max(v - knee, 0.0)
+        out.append(v - over + rng * (over / (over + rng)) if over else v)
+    return out
+
+
+def clipping(preset):
+    """Fraction of channels driven to pure black or pure white across the reference colours."""
+    out = [apply(preset, c) for c in REFERENCE.values()]
+    flat = [v for px in out for v in px]
+    return sum(1 for v in flat if v <= 0.001 or v >= 0.999) / len(flat)
 
 
 def signature(preset):
@@ -177,6 +195,11 @@ def main():
 
     weakest, weakest_name = from_original[0]
 
+    clipped = sorted(((clipping(p), p["name"]) for p in cams), reverse=True)
+    print("\nmost clipped (fraction of channels at pure black or white):")
+    for c, n in clipped[:3]:
+        print(f"  {n:26s} {c * 100:4.0f}%")
+
     pairs = sorted((distance(sigs[a], sigs[b]), a, b) for a, b in combinations(sigs, 2))
     print("\nclosest pairs of cameras:")
     for d, a, b in pairs[:5]:
@@ -188,6 +211,8 @@ def main():
     print(f"\nmin distance from original: {weakest:.1f} ({weakest_name})")
     print(f"min distance between any two cameras: {pairs[0][0]:.1f}")
     assert weakest > 3.0, f"{weakest_name} is nearly identical to the original"
+    worst_clip, worst_clip_name = clipped[0]
+    assert worst_clip < 0.20, f"{worst_clip_name} clips {worst_clip:.0%} of channels"
     assert pairs[0][0] > 2.0, f"{pairs[0][1]} and {pairs[0][2]} are visually indistinguishable"
     print("\nOK: every camera is distinguishable from the original and from every other camera.")
 

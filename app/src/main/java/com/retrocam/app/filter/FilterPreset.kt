@@ -305,15 +305,15 @@ object PresetRepository {
         lutIntensity = if (hasLut) optFloat("lutIntensity", 1f) else 0f,
 
         exposure = scaled("exposure", 2f),
-        brightness = scaled("brightness", 0.25f),
-        contrast = scaled("contrast", 0.6f),
-        saturation = scaled("saturation", 1f),
+        brightness = scaled("brightness", 0.35f),
+        contrast = scaled("contrast", 1.1f),
+        saturation = scaled("saturation", 1.5f),
         temperature = scaled("temperature", 1f),
         tint = scaled("tint", 1f),
-        highlights = scaled("highlights", 0.3f),
-        shadows = scaled("shadows", 0.3f),
-        whites = scaled("whites", 0.35f),
-        blacks = scaled("blacks", 0.25f),
+        highlights = scaled("highlights", 0.5f),
+        shadows = scaled("shadows", 0.5f),
+        whites = scaled("whites", 0.55f),
+        blacks = scaled("blacks", 0.45f),
         fade = scaled("fade", 1f),
 
         toneShoulder = scaled("highlightRolloff", 1f),
@@ -325,34 +325,34 @@ object PresetRepository {
         ),
         shadowTint = optString("shadowTint").takeIf { it.isNotEmpty() }?.toRgb()
             ?: floatArrayOf(0f, 0f, 0f),
-        shadowTintAmount = scaled("shadowTintAmount", 0.35f),
+        shadowTintAmount = scaled("shadowTintAmount", 0.55f),
         highlightTint = optString("highlightTint").takeIf { it.isNotEmpty() }?.toRgb()
             ?: floatArrayOf(0f, 0f, 0f),
-        highlightTintAmount = scaled("highlightTintAmount", 0.35f),
-        skinSat = scaled("skinSaturation", 1f),
-        skinShift = scaled("skinHue", 0.06f),
-        greenSat = scaled("greenSaturation", 1f),
-        greenShift = scaled("greenHue", 0.06f),
-        blueSat = scaled("blueSaturation", 1f),
-        blueShift = scaled("blueHue", 0.06f),
-        microContrast = scaled("microContrast", 0.6f),
+        highlightTintAmount = scaled("highlightTintAmount", 0.55f),
+        skinSat = scaled("skinSaturation", 1.5f),
+        skinShift = scaled("skinHue", 0.09f),
+        greenSat = scaled("greenSaturation", 1.5f),
+        greenShift = scaled("greenHue", 0.09f),
+        blueSat = scaled("blueSaturation", 1.5f),
+        blueShift = scaled("blueHue", 0.09f),
+        microContrast = scaled("microContrast", 1.2f),
 
         blurAmount = scaled("blur", 2f),
         motionBlur = scaled("motionBlur", 2.5f),
         motionAngle = Math.toRadians(optFloat("motionAngle", 0f).toDouble()).toFloat(),
-        sharpness = scaled("sharpness", 1f),
-        clarity = scaled("clarity", 0.5f),
-        chromaAmount = scaled("chromaticAberration", 1.5f),
-        rgbShift = scaled("rgbShift", 1.5f),
-        anaglyph = scaled("anaglyph", 1.5f),
-        colorBleed = scaled("colorBleed", 1f),
+        sharpness = scaled("sharpness", 1.4f),
+        clarity = scaled("clarity", 1f),
+        chromaAmount = scaled("chromaticAberration", 2.2f),
+        rgbShift = scaled("rgbShift", 2.2f),
+        anaglyph = scaled("anaglyph", 2.2f),
+        colorBleed = scaled("colorBleed", 1.4f),
 
-        halationAmount = scaled("halation", 1.2f),
+        halationAmount = scaled("halation", 1.8f),
         halationRadius = optFloat("halationRadius", 0.8f),
         halationThreshold = optFloat("halationThreshold", 0.72f),
-        glowAmount = scaled("glow", 1.2f),
+        glowAmount = scaled("glow", 1.8f),
         glowThreshold = optFloat("glowThreshold", 0.65f),
-        leakAmount = scaled("lightLeak", 1.2f),
+        leakAmount = scaled("lightLeak", 1.8f),
         leakColor = optString("leakColor").takeIf { it.isNotEmpty() }?.toRgb()
             ?: floatArrayOf(1f, 0.52f, 0.22f),
         leakX = optFloat("leakX", 1.05f),
@@ -362,7 +362,7 @@ object PresetRepository {
         flashAmount = scaled("flash", 0.5f),
         flashHardness = optFloat("flashHardness", 2f),
 
-        scanlineAmount = scaled("scanlines", 0.5f),
+        scanlineAmount = scaled("scanlines", 0.75f),
         scanlineCount = optFloat("scanlineCount", 320f),
         syncBarAmount = scaled("syncBar", 0.4f),
         syncBarWidth = optFloat("syncBarWidth", 0.035f),
@@ -370,19 +370,19 @@ object PresetRepository {
         trackingAmount = scaled("tracking", 1f),
         noiseAmount = scaled("noise", 0.35f),
 
-        grainAmount = scaled("grain", 0.18f),
+        grainAmount = scaled("grain", 0.30f),
         // 0..100 maps to a half-size..double-size grain cell, 50 being the reference.
         grainSize = 0.5f + optFloat("grainSize", 50f) / 100f * 1.5f,
-        dustAmount = scaled("dust", 1f),
-        scratchAmount = scaled("scratches", 1f),
-        vignetteAmount = scaled("vignette", 1.5f)
+        dustAmount = scaled("dust", 1.5f),
+        scratchAmount = scaled("scratches", 1.5f),
+        vignetteAmount = scaled("vignette", 2.4f)
     )
 
     private fun JSONObject.scaled(key: String, fullScale: Float): Float =
         optFloat(key, 0f) / 100f * fullScale
 
     private fun JSONObject.gammaFor(key: String): Float =
-        1f - optFloat(key, 0f) / 100f * 0.4f
+        1f - optFloat(key, 0f) / 100f * 0.55f
 
     private fun JSONObject.toFrame() = Frame(
         color = Color.parseColor(optString("color", "#FFFFFFFF")),
