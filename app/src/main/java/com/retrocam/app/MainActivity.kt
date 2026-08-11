@@ -7,6 +7,15 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
+import android.graphics.PointF
+import android.graphics.Rect
+import android.graphics.RectF
+import android.hardware.camera2.CameraCharacteristics
+import android.hardware.camera2.CameraCaptureSession
+import android.hardware.camera2.CameraMetadata
+import android.hardware.camera2.CaptureRequest
+import android.hardware.camera2.CaptureResult
+import android.hardware.camera2.TotalCaptureResult
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
@@ -14,9 +23,14 @@ import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
+import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
+import androidx.camera.camera2.interop.Camera2CameraInfo
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
@@ -51,6 +65,7 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
+@OptIn(markerClass = [ExperimentalCamera2Interop::class])
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
@@ -58,6 +73,9 @@ class MainActivity : AppCompatActivity() {
 
     private var imageCapture: ImageCapture? = null
     private var camera: Camera? = null
+
+    /** Fallback coordinate space for face rectangles when no crop region is reported. */
+    private var sensorActiveArray: Rect? = null
     private var previewRenderer: ShaderRenderer? = null
     private val startTimeNanos = System.nanoTime()
 
@@ -89,6 +107,11 @@ class MainActivity : AppCompatActivity() {
     private var framesSinceReport = 0
     private var fpsWindowStartNanos = 0L
 
+    private var flash = FlashChoice.OFF
+    private var timerSeconds = 0
+    private var aspect = AspectChoice.AUTO
+    private var countingDown = false
+
     /**
      * The selected preset with the intensity already applied. Written on the main thread whenever
      * the selection or the slider changes, read on the camera thread by every frame — so it is
@@ -114,6 +137,7 @@ class MainActivity : AppCompatActivity() {
 
         cameraExecutor = Executors.newSingleThreadExecutor()
         binding.shutterButton.setOnClickListener { takePhoto() }
+        setUpTopBar()
         binding.galleryButton.setOnClickListener {
             startActivity(Intent(this, GalleryActivity::class.java))
         }
@@ -239,7 +263,13 @@ class MainActivity : AppCompatActivity() {
 
     private fun refreshActivePreset() {
         val base = allPresets.firstOrNull { it.id == selectedPresetId } ?: return
-        activePreset = base.scaledBy(intensity)
+        val scaled = base.scaledBy(intensity)
+        // AUTO leaves the filter's own format alone; anything else is an explicit override.
+        activePreset = when (aspect) {
+            AspectChoice.AUTO -> scaled
+            AspectChoice.FULL -> scaled.copy(aspect = null)
+            else -> scaled.copy(aspect = aspect.ratio)
+        }
         binding.intensityLabel.text =
             getString(R.string.intensity_label, base.name, (intensity * 100).roundToInt())
     }
@@ -257,11 +287,20 @@ class MainActivity : AppCompatActivity() {
                 .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                 .build()
 
-            val analysis = ImageAnalysis.Builder()
+            val analysisBuilder = ImageAnalysis.Builder()
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setResolutionSelector(resolutionSelector)
-                .build()
+
+            // Ask the HAL for face rectangles and listen for the results it already produces.
+            Camera2Interop.Extender(analysisBuilder)
+                .setCaptureRequestOption(
+                    CaptureRequest.STATISTICS_FACE_DETECT_MODE,
+                    CameraMetadata.STATISTICS_FACE_DETECT_MODE_SIMPLE
+                )
+                .setSessionCaptureCallback(faceCaptureCallback)
+
+            val analysis = analysisBuilder.build()
                 .also { it.setAnalyzer(cameraExecutor, ::processFrame) }
 
             val capture = ImageCapture.Builder()
@@ -276,10 +315,114 @@ class MainActivity : AppCompatActivity() {
                     this, CameraSelector.DEFAULT_BACK_CAMERA, analysis, capture
                 )
                 observeZoom()
+                readCameraCharacteristics()
+                setStatus(R.string.status_ready)
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun readCameraCharacteristics() {
+        val info = camera?.cameraInfo ?: return
+        try {
+            val camera2Info = Camera2CameraInfo.from(info)
+            sensorActiveArray =
+                camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
+            val modes = camera2Info.getCameraCharacteristic(
+                CameraCharacteristics.STATISTICS_INFO_AVAILABLE_FACE_DETECT_MODES
+            )
+            val maxFaces = camera2Info.getCameraCharacteristic(
+                CameraCharacteristics.STATISTICS_INFO_MAX_FACE_COUNT
+            ) ?: 0
+            val supported = maxFaces > 0 &&
+                modes?.any { it != CameraMetadata.STATISTICS_FACE_DETECT_MODE_OFF } == true
+            Log.i(TAG, "face detection supported=$supported maxFaces=$maxFaces")
+        } catch (e: Exception) {
+            Log.w(TAG, "Could not read camera characteristics", e)
+        }
+    }
+
+    // --- status chip -------------------------------------------------------
+
+    private fun setStatus(resId: Int) {
+        binding.statusChip.setText(resId)
+        binding.statusChip.animate().alpha(1f).setDuration(120).start()
+    }
+
+    // --- top bar -----------------------------------------------------------
+
+    /**
+     * AUTO defers to the filter, which is what keeps a Polaroid square and a VHS 4:3 by default.
+     * The other choices override it, so an explicit pick always wins over the look's own format.
+     */
+    private enum class AspectChoice(val label: String, val ratio: Float?) {
+        AUTO("AUTO", null),
+        FULL("FULL", null),
+        PORTRAIT_3_4("3:4", 0.75f),
+        SQUARE("1:1", 1f)
+    }
+
+    private enum class FlashChoice(val label: String, val mode: Int, val icon: Int) {
+        OFF("off", ImageCapture.FLASH_MODE_OFF, R.drawable.ic_flash_off),
+        AUTO("auto", ImageCapture.FLASH_MODE_AUTO, R.drawable.ic_flash_on),
+        ON("on", ImageCapture.FLASH_MODE_ON, R.drawable.ic_flash_on)
+    }
+
+    private fun setUpTopBar() {
+        binding.flashButton.setOnClickListener {
+            flash = FlashChoice.entries[(flash.ordinal + 1) % FlashChoice.entries.size]
+            imageCapture?.flashMode = flash.mode
+            binding.flashButton.setImageResource(flash.icon)
+            binding.flashButton.alpha = if (flash == FlashChoice.OFF) 0.65f else 1f
+            toast(getString(R.string.flash_toast, flash.label))
+        }
+        binding.flashButton.alpha = 0.65f
+
+        binding.timerButton.setOnClickListener {
+            timerSeconds = when (timerSeconds) {
+                0 -> 3
+                3 -> 10
+                else -> 0
+            }
+            binding.timerButton.alpha = if (timerSeconds == 0) 0.65f else 1f
+            val label = if (timerSeconds == 0) getString(R.string.timer_off) else "${timerSeconds}s"
+            toast(getString(R.string.timer_toast, label))
+        }
+        binding.timerButton.alpha = 0.65f
+
+        binding.aspectButton.setOnClickListener {
+            aspect = AspectChoice.entries[(aspect.ordinal + 1) % AspectChoice.entries.size]
+            binding.aspectButton.text = aspect.label
+            refreshActivePreset()
+            toast(getString(R.string.aspect_toast, aspect.label))
+        }
+        binding.aspectButton.text = aspect.label
+
+        binding.gridButton.setOnClickListener {
+            val showing = binding.gridOverlay.visibility == View.VISIBLE
+            binding.gridOverlay.visibility = if (showing) View.GONE else View.VISIBLE
+            binding.gridButton.alpha = if (showing) 0.65f else 1f
+        }
+        binding.gridButton.alpha = 0.65f
+    }
+
+    private fun toast(message: String) =
+        Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    /** Counts down on screen, then fires the shutter. */
+    private fun startCountdown(remaining: Int) {
+        if (remaining <= 0) {
+            binding.countdownLabel.animate().alpha(0f).setDuration(150).start()
+            capturePhoto()
+            return
+        }
+        binding.countdownLabel.text = remaining.toString()
+        binding.countdownLabel.alpha = 1f
+        binding.countdownLabel.scaleX = 1.4f
+        binding.countdownLabel.scaleY = 1.4f
+        binding.countdownLabel.animate().scaleX(1f).scaleY(1f).setDuration(320).start()
+        binding.countdownLabel.postDelayed({ startCountdown(remaining - 1) }, 1000)
     }
 
     // --- zoom --------------------------------------------------------------
@@ -390,13 +533,99 @@ class MainActivity : AppCompatActivity() {
             point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
         ).setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS).build()
 
-        try {
+        val focusing = try {
             camera.cameraControl.startFocusAndMetering(action)
         } catch (e: IllegalArgumentException) {
             Log.w(TAG, "Focus point rejected", e)
             return
         }
+        // Driven by the actual focus result rather than a fixed delay, so the chip doesn't claim
+        // "Ready" while the lens is still hunting.
+        setStatus(R.string.status_focusing)
+        focusing.addListener(
+            { setStatus(R.string.status_ready) },
+            ContextCompat.getMainExecutor(this)
+        )
         showFocusRing(viewX, viewY)
+    }
+
+    // --- face detection ----------------------------------------------------
+
+    /**
+     * The camera's own face detector, read out of the capture metadata. The ISP already computes
+     * this for autofocus, so taking the result costs nothing per frame — running a detection model
+     * over every preview frame instead would be the single most expensive thing in the app.
+     */
+    private val faceCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
+        override fun onCaptureCompleted(
+            session: CameraCaptureSession,
+            request: CaptureRequest,
+            result: TotalCaptureResult
+        ) {
+            val geometry = previewGeometry ?: return
+            val faces = result.get(CaptureResult.STATISTICS_FACES)
+            if (faces == null || faces.isEmpty()) {
+                binding.faceOverlay.post { binding.faceOverlay.setFaces(emptyList()) }
+                return
+            }
+
+            // Face bounds are in active-array coordinates; the crop region is what the preview is
+            // actually showing, so normalising against it is what keeps boxes aligned while zoomed.
+            val region = result.get(CaptureResult.SCALER_CROP_REGION) ?: sensorActiveArray ?: return
+            if (region.width() <= 0 || region.height() <= 0) return
+
+            val boxes = faces.mapNotNull { face ->
+                val bounds = face.bounds
+                val a = sensorToView(
+                    (bounds.left - region.left) / region.width().toFloat(),
+                    (bounds.top - region.top) / region.height().toFloat(),
+                    geometry
+                )
+                val b = sensorToView(
+                    (bounds.right - region.left) / region.width().toFloat(),
+                    (bounds.bottom - region.top) / region.height().toFloat(),
+                    geometry
+                )
+                // Rotation can swap which corner is which, so normalise rather than assume.
+                RectF(minOf(a.x, b.x), minOf(a.y, b.y), maxOf(a.x, b.x), maxOf(a.y, b.y))
+                    .takeIf { it.width() > 1f && it.height() > 1f }
+            }
+            // Logged only when the count changes: enough to confirm detection and box placement
+            // without a per-frame flood.
+            if (boxes.size != lastFaceCount) {
+                lastFaceCount = boxes.size
+                Log.i(TAG, "faces=${boxes.size} ${boxes.firstOrNull()?.let {
+                    "first=[%.0f,%.0f,%.0f,%.0f] view=%dx%d".format(
+                        it.left, it.top, it.right, it.bottom,
+                        binding.faceOverlay.width, binding.faceOverlay.height
+                    )
+                } ?: ""}")
+            }
+            binding.faceOverlay.post { binding.faceOverlay.setFaces(boxes) }
+        }
+    }
+
+    private var lastFaceCount = -1
+
+    /**
+     * Sensor-normalised point to a view coordinate: the exact inverse of what [focusAt] does,
+     * walking the transform chain forwards instead of backwards.
+     */
+    private fun sensorToView(bu: Float, bv: Float, g: PreviewGeometry): PointF {
+        val u: Float
+        val v: Float
+        when (g.rotationDegrees) {
+            90 -> { u = 1f - bv; v = bu }
+            180 -> { u = 1f - bu; v = 1f - bv }
+            270 -> { u = bv; v = 1f - bu }
+            else -> { u = bu; v = bv }
+        }
+        val croppedX = u * g.frameWidth - g.layout.cropLeft
+        val croppedY = v * g.frameHeight - g.layout.cropTop
+        return PointF(
+            (croppedX + g.layout.borderLeft) * g.scale + g.destLeft,
+            (croppedY + g.layout.borderTop) * g.scale + g.destTop
+        )
     }
 
     private fun showFocusRing(viewX: Float, viewY: Float) {
@@ -579,8 +808,23 @@ class MainActivity : AppCompatActivity() {
     // --- capture -----------------------------------------------------------
 
     private fun takePhoto() {
+        if (countingDown) return
+        if (timerSeconds > 0) {
+            countingDown = true
+            binding.shutterButton.isEnabled = false
+            startCountdown(timerSeconds)
+            return
+        }
+        capturePhoto()
+    }
+
+    private fun capturePhoto() {
+        countingDown = false
+        binding.shutterButton.isEnabled = true
+
         val capture = imageCapture ?: return
         val preset = activePreset ?: return
+        setStatus(R.string.status_saving)
 
         capture.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
@@ -605,6 +849,7 @@ class MainActivity : AppCompatActivity() {
 
             override fun onError(exception: ImageCaptureException) {
                 Log.e(TAG, "Capture failed", exception)
+                runOnUiThread { setStatus(R.string.status_ready) }
             }
         })
     }
@@ -627,7 +872,10 @@ class MainActivity : AppCompatActivity() {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
         }
 
-        runOnUiThread { Toast.makeText(this, R.string.saved_toast, Toast.LENGTH_SHORT).show() }
+        runOnUiThread {
+            Toast.makeText(this, R.string.saved_toast, Toast.LENGTH_SHORT).show()
+            setStatus(R.string.status_ready)
+        }
     }
 
     override fun onDestroy() {

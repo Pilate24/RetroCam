@@ -12,4 +12,16 @@
     <string name="share_photo">Share photo</string>
     <string name="zoom_label">%1$.1f×</string>
     <string name="viewfinder">Viewfinder. Pinch to zoom, double tap to toggle zoom.</string>
+    <string name="flash">Flash</string>
+    <string name="timer">Self-timer</string>
+    <string name="aspect_ratio">Aspect ratio</string>
+    <string name="grid">Grid lines</string>
+    <string name="status_ready">Ready</string>
+    <string name="status_focusing">Focusing…</string>
+    <string name="status_saving">Saving…</string>
+    <string name="aspect_auto">AUTO</string>
+    <string name="flash_toast">Flash: %1$s</string>
+    <string name="timer_toast">Self-timer: %1$s</string>
+    <string name="aspect_toast">Aspect: %1$s</string>
+    <string name="timer_off">off</string>
 </resources>
