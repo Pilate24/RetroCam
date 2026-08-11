@@ -191,15 +191,22 @@ object FilterShader {
         }
 
         /**
-         * Compresses anything above the knee toward white instead of letting the final clamp
-         * flat-clip it. Without this, a punchy preset turns bright areas into featureless white
-         * paste — the difference between a look reading as "strong" and as "broken".
+         * Film-style shoulder and toe around the final clamp: values heading past white or below
+         * black compress asymptotically instead of flat-clipping into featureless paste.
+         *
+         * This is what buys the headroom for strong looks. Without a toe, hard contrast crushes
+         * shadows to a flat void and there is nowhere left to push; with one, the same contrast
+         * keeps gradation in the darks.
          */
         float3 softLimit(float3 c) {
             const float knee = 0.9;
             const float range = 1.0 - knee;
             float3 over = max(c - float3(knee), float3(0.0));
-            return c - over + range * (over / (over + float3(range)));
+            c = c - over + range * (over / (over + float3(range)));
+
+            const float toe = 0.06;
+            float3 under = max(float3(toe) - c, float3(0.0));
+            return c + under - toe * (under / (under + float3(toe)));
         }
 
         float3 brightPass(float3 c, float threshold) {

@@ -33,13 +33,13 @@ REFERENCE = {
 
 # Must track PresetRepository.readShaderParams(). If these drift, the measurements are fiction.
 SCALES = {
-    "exposure": 2.0, "brightness": 0.35, "contrast": 1.1, "saturation": 1.5,
-    "temperature": 1.0, "tint": 1.0, "highlights": 0.5, "shadows": 0.5,
-    "whites": 0.55, "blacks": 0.45, "fade": 1.0,
+    "exposure": 2.0, "brightness": 0.45, "contrast": 1.6, "saturation": 2.1,
+    "temperature": 1.0, "tint": 1.0, "highlights": 0.7, "shadows": 0.7,
+    "whites": 0.8, "blacks": 0.65, "fade": 1.0,
     "highlightRolloff": 1.0, "shadowResponse": 0.6,
-    "shadowTintAmount": 0.55, "highlightTintAmount": 0.55,
-    "skinSaturation": 1.5, "skinHue": 0.09, "greenSaturation": 1.5, "greenHue": 0.09,
-    "blueSaturation": 1.5, "blueHue": 0.09,
+    "shadowTintAmount": 0.8, "highlightTintAmount": 0.8,
+    "skinSaturation": 2.1, "skinHue": 0.13, "greenSaturation": 2.1, "greenHue": 0.13,
+    "blueSaturation": 2.1, "blueHue": 0.13,
 }
 
 
@@ -48,7 +48,7 @@ def norm(preset, key):
 
 
 def gamma(preset, key):
-    return 1.0 - preset.get(key, 0) / 100.0 * 0.55
+    return 1.0 - preset.get(key, 0) / 100.0 * 0.72
 
 
 def hex_rgb(s):
@@ -84,9 +84,9 @@ def apply(preset, rgb):
     br = norm(preset, "brightness")
     r, g, b = r + br, g + br, b + br
     t = norm(preset, "temperature")
-    r, b = r + t * 0.32, b - t * 0.32
+    r, b = r + t * 0.45, b - t * 0.45
     ti = norm(preset, "tint")
-    g, r, b = g + ti * 0.26, r - ti * 0.09, b - ti * 0.09
+    g, r, b = g + ti * 0.36, r - ti * 0.13, b - ti * 0.13
 
     # 5. tone curve
     c = norm(preset, "contrast")
@@ -147,26 +147,36 @@ def apply(preset, rgb):
         r, g, b = r + d, g + d, b + d
     fd = norm(preset, "fade")
     if fd:
-        r, g, b = [v * (1 - fd * 0.60) + fd * 0.30 for v in (r, g, b)]
+        r, g, b = [v * (1 - fd * 0.72) + fd * 0.38 for v in (r, g, b)]
 
     return tuple(clamp01(v) for v in soft_limit((r, g, b)))
 
 
 def soft_limit(c):
-    """Mirror of FilterShader.softLimit()."""
-    knee, rng = 0.9, 0.1
+    """Mirror of FilterShader.softLimit(): shoulder above the knee, toe below."""
+    knee, rng, toe = 0.9, 0.1, 0.06
     out = []
     for v in c:
         over = max(v - knee, 0.0)
-        out.append(v - over + rng * (over / (over + rng)) if over else v)
+        if over:
+            v = v - over + rng * (over / (over + rng))
+        under = max(toe - v, 0.0)
+        if under:
+            v = v + under - toe * (under / (under + toe))
+        out.append(v)
     return out
 
 
 def clipping(preset):
-    """Fraction of channels driven to pure black or pure white across the reference colours."""
+    """
+    Fraction of channels pushed into the extreme 2% of the range, where no usable gradation is
+    left. Deliberately not a test for exactly 0.0 or 1.0: the shader's toe and shoulder are
+    asymptotic, so nothing ever lands exactly on the rails and such a test always reports zero
+    however blown out the picture actually is.
+    """
     out = [apply(preset, c) for c in REFERENCE.values()]
     flat = [v for px in out for v in px]
-    return sum(1 for v in flat if v <= 0.001 or v >= 0.999) / len(flat)
+    return sum(1 for v in flat if v < 0.02 or v > 0.98) / len(flat)
 
 
 def signature(preset):
