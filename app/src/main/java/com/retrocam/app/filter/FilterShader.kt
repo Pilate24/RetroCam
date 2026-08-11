@@ -125,10 +125,19 @@ object FilterShader {
         const float TWO_PI = 6.2831853;
         const float3 LUMA = float3(0.2126, 0.7152, 0.0722);
 
+        /**
+         * Grain, dust and scratches all draw from here, so its distribution is what decides whether
+         * they read as film or as a pattern.
+         *
+         * The tempting short version ends in fract(p.x * p.y). Multiplying two near-linear ramps
+         * gives hyperbolic contours, so the "noise" carries faint curved lines through it — invisible
+         * under weak grain and glaring once grain is strong. This three-component mix decorrelates
+         * the axes properly and has no such structure.
+         */
         float hash(float2 p) {
-            p = fract(p * float2(123.34, 456.21));
-            p += dot(p, p + 45.32);
-            return fract(p.x * p.y);
+            float3 q = fract(float3(p.x, p.y, p.x) * float3(0.1031, 0.1030, 0.0973));
+            q += dot(q, float3(q.y, q.z, q.x) + 33.33);
+            return fract((q.x + q.y) * q.z);
         }
 
         float3 sampleInput(float2 c) {
@@ -308,8 +317,8 @@ object FilterShader {
             if (exposure != 0.0) color *= pow(2.0, exposure);
             if (brightness != 0.0) color += brightness;
             if (temperature != 0.0) {
-                color.r += temperature * 0.32;
-                color.b -= temperature * 0.32;
+                color.r += temperature * 0.45;
+                color.b -= temperature * 0.45;
             }
             if (tint != 0.0) {
                 color.g += tint * 0.26;
@@ -320,13 +329,24 @@ object FilterShader {
             // --- 5. tone curve -------------------------------------------------------------
             if (contrast != 0.0) color = (color - float3(0.5)) * (1.0 + contrast) + float3(0.5);
             if (toneToe != 0.0) {
-                // Shadow response. Positive deepens the toe, negative lifts it.
-                color = pow(max(color, float3(0.0)), float3(1.0 + toneToe));
+                // Shadow response, weighted toward the shadows. A flat gamma here would drag the
+                // midtones with it, which is the same mistake the shoulder used to make.
+                float3 shaped = pow(max(color, float3(0.0)), float3(1.0 + toneToe));
+                float3 weight = float3(1.0) - smoothstep(float3(0.0), float3(0.62), color);
+                color = mix(color, shaped, weight);
             }
             if (toneShoulder > 0.0) {
-                // Filmic highlight roll-off: an exponential shoulder, so highlights compress
-                // toward white instead of clipping flat. This is most of what "cinematic" means.
-                color = mix(color, float3(1.0) - exp(-color * 1.6), toneShoulder);
+                // Filmic highlight roll-off, applied ONLY above the knee.
+                //
+                // The obvious version — mix toward 1 - exp(-c) — is a global tone map: it lifts
+                // shadows and pulls highlights down across the whole range, so instead of reading
+                // as cinematic the picture just goes flat and grey. Everything below the knee must
+                // pass through untouched; only the top compresses.
+                const float knee = 0.75;
+                const float span = 1.0 - knee;
+                float3 over = max(color - float3(knee), float3(0.0));
+                float3 rolled = float3(knee) + span * (over / (over + float3(span)));
+                color = mix(color, rolled, toneShoulder);
             }
             if (whites != 0.0 || blacks != 0.0) {
                 float l = dot(clamp(color, float3(0.0), float3(1.0)), LUMA);
@@ -336,8 +356,11 @@ object FilterShader {
 
             // --- 6. colour rendering -------------------------------------------------------
             if (saturation != 0.0) {
+                // Clamped at zero: once the scale exceeded 1.0, a preset asking for -100 produced a
+                // negative mix factor, which inverts chroma instead of removing it — the black and
+                // white looks were coming out with reds turned cyan. Fully grey is the floor.
                 float l = dot(color, LUMA);
-                color = mix(float3(l), color, 1.0 + saturation);
+                color = mix(float3(l), color, max(0.0, 1.0 + saturation));
             }
             if (lutIntensity > 0.0) {
                 color = mix(color, sampleLut(color), lutIntensity);
@@ -375,7 +398,7 @@ object FilterShader {
             }
             if (fade > 0.0) {
                 // Lift the black point the way aged prints do, without touching the highlights.
-                color = mix(color, color * (1.0 - fade * 0.60) + float3(fade * 0.30), 1.0);
+                color = mix(color, color * (1.0 - fade * 0.42) + float3(fade * 0.20), 1.0);
             }
 
             // --- 9. micro contrast, then sharpening ----------------------------------------

@@ -306,8 +306,11 @@ object PresetRepository {
 
         exposure = scaled("exposure", 2f),
         brightness = scaled("brightness", 0.45f),
-        contrast = scaled("contrast", 1.6f),
-        saturation = scaled("saturation", 2.1f),
+        // Asymmetric on purpose. Raising the scale to make punchy looks punchier applied equally to
+        // the soft ones, and -30 was costing them half their contrast — the main reason so many
+        // presets read as flat. Softening should be gentler than hardening.
+        contrast = optFloat("contrast", 0f).let { if (it >= 0f) it / 100f * 1.6f else it / 100f * 0.55f },
+        saturation = scaled("saturation", 1.15f),
         temperature = scaled("temperature", 1f),
         tint = scaled("tint", 1f),
         highlights = scaled("highlights", 0.7f),
@@ -329,11 +332,11 @@ object PresetRepository {
         highlightTint = optString("highlightTint").takeIf { it.isNotEmpty() }?.toRgb()
             ?: floatArrayOf(0f, 0f, 0f),
         highlightTintAmount = scaled("highlightTintAmount", 0.8f),
-        skinSat = scaled("skinSaturation", 2.1f),
+        skinSat = scaled("skinSaturation", 1.2f),
         skinShift = scaled("skinHue", 0.13f),
-        greenSat = scaled("greenSaturation", 2.1f),
+        greenSat = scaled("greenSaturation", 1.2f),
         greenShift = scaled("greenHue", 0.13f),
-        blueSat = scaled("blueSaturation", 2.1f),
+        blueSat = scaled("blueSaturation", 1.2f),
         blueShift = scaled("blueHue", 0.13f),
         microContrast = scaled("microContrast", 1.8f),
 

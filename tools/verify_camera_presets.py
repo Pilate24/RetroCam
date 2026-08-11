@@ -33,13 +33,13 @@ REFERENCE = {
 
 # Must track PresetRepository.readShaderParams(). If these drift, the measurements are fiction.
 SCALES = {
-    "exposure": 2.0, "brightness": 0.45, "contrast": 1.6, "saturation": 2.1,
+    "exposure": 2.0, "brightness": 0.45, "contrast": 1.6, "saturation": 1.15,
     "temperature": 1.0, "tint": 1.0, "highlights": 0.7, "shadows": 0.7,
     "whites": 0.8, "blacks": 0.65, "fade": 1.0,
     "highlightRolloff": 1.0, "shadowResponse": 0.6,
     "shadowTintAmount": 0.8, "highlightTintAmount": 0.8,
-    "skinSaturation": 2.1, "skinHue": 0.13, "greenSaturation": 2.1, "greenHue": 0.13,
-    "blueSaturation": 2.1, "blueHue": 0.13,
+    "skinSaturation": 1.2, "skinHue": 0.13, "greenSaturation": 1.2, "greenHue": 0.13,
+    "blueSaturation": 1.2, "blueHue": 0.13,
 }
 
 
@@ -89,15 +89,26 @@ def apply(preset, rgb):
     g, r, b = g + ti * 0.36, r - ti * 0.13, b - ti * 0.13
 
     # 5. tone curve
-    c = norm(preset, "contrast")
+    raw_c = preset.get("contrast", 0)
+    c = raw_c / 100.0 * (1.6 if raw_c >= 0 else 0.55)
     if c:
         r, g, b = [(v - 0.5) * (1 + c) + 0.5 for v in (r, g, b)]
     toe = norm(preset, "shadowResponse")
     if toe:
-        r, g, b = [max(v, 0.0) ** (1 + toe) for v in (r, g, b)]
+        shaped = []
+        for v in (r, g, b):
+            w = 1.0 - smoothstep(0.0, 0.62, v)
+            shaped.append(v + (max(v, 0.0) ** (1 + toe) - v) * w)
+        r, g, b = shaped
     sh = norm(preset, "highlightRolloff")
     if sh:
-        r, g, b = [v + (1 - math.exp(-v * 1.6) - v) * sh for v in (r, g, b)]
+        knee, span = 0.75, 0.25
+        rolled = []
+        for v in (r, g, b):
+            over = max(v - knee, 0.0)
+            y = knee + span * (over / (over + span)) if over else v
+            rolled.append(v + (y - v) * sh)
+        r, g, b = rolled
     w, bl = norm(preset, "whites"), norm(preset, "blacks")
     if w or bl:
         l = sum(x * y for x, y in zip((clamp01(r), clamp01(g), clamp01(b)), LUMA))
@@ -109,7 +120,7 @@ def apply(preset, rgb):
     s = norm(preset, "saturation")
     if s:
         l = sum(x * y for x, y in zip((r, g, b), LUMA))
-        r, g, b = [l + (v - l) * (1 + s) for v in (r, g, b)]
+        r, g, b = [l + (v - l) * max(0.0, 1 + s) for v in (r, g, b)]
 
     # 7. channel response, HSL, split toning
     gr, gg, gb = gamma(preset, "redResponse"), gamma(preset, "greenResponse"), gamma(preset, "blueResponse")
@@ -147,7 +158,7 @@ def apply(preset, rgb):
         r, g, b = r + d, g + d, b + d
     fd = norm(preset, "fade")
     if fd:
-        r, g, b = [v * (1 - fd * 0.72) + fd * 0.38 for v in (r, g, b)]
+        r, g, b = [v * (1 - fd * 0.42) + fd * 0.20 for v in (r, g, b)]
 
     return tuple(clamp01(v) for v in soft_limit((r, g, b)))
 
