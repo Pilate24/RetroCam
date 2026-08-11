@@ -19,6 +19,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
+import androidx.camera.core.FocusMeteringAction
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -43,6 +45,7 @@ import java.util.Date
 import java.util.Locale
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
+import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
@@ -247,6 +250,13 @@ class MainActivity : AppCompatActivity() {
                     )
                     return true
                 }
+
+                // Confirmed, not onSingleTapUp: otherwise the first tap of a double-tap zoom
+                // would also fire a focus request at the same point.
+                override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
+                    focusAt(e.x, e.y)
+                    return true
+                }
             }
         )
 
@@ -256,6 +266,90 @@ class MainActivity : AppCompatActivity() {
             if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
             true
         }
+    }
+
+    // --- tap to focus ------------------------------------------------------
+
+    /**
+     * Everything needed to turn a screen tap back into a sensor coordinate. Recorded on the camera
+     * thread as each frame is drawn, read on the main thread when a tap lands.
+     */
+    private class PreviewGeometry(
+        val destLeft: Float,
+        val destTop: Float,
+        val scale: Float,
+        val layout: OverlayCompositor.Layout,
+        val frameWidth: Int,
+        val frameHeight: Int,
+        val rotationDegrees: Int
+    )
+
+    @Volatile
+    private var previewGeometry: PreviewGeometry? = null
+
+    /**
+     * A tap has to be walked back through every transform between the sensor and the screen:
+     * letterbox -> frame border -> aspect crop -> the rotation applied before filtering. Skipping
+     * any step focuses on the wrong part of the scene, and worst at the edges where people tap.
+     */
+    private fun focusAt(viewX: Float, viewY: Float) {
+        val camera = this.camera ?: return
+        val geometry = previewGeometry ?: return
+        val layout = geometry.layout
+
+        // Undo the letterbox: view pixels -> composed image pixels.
+        val composedX = (viewX - geometry.destLeft) / geometry.scale
+        val composedY = (viewY - geometry.destTop) / geometry.scale
+
+        // Undo the border. Taps on the border or the letterbox aren't on the picture at all.
+        val pictureX = composedX - layout.borderLeft
+        val pictureY = composedY - layout.borderTop
+        if (pictureX < 0f || pictureY < 0f ||
+            pictureX > layout.cropWidth || pictureY > layout.cropHeight
+        ) return
+
+        // Undo the crop, then normalise against the upright frame.
+        val u = (pictureX + layout.cropLeft) / geometry.frameWidth
+        val v = (pictureY + layout.cropTop) / geometry.frameHeight
+
+        // Undo the rotation that made the buffer upright, back into sensor buffer space.
+        val bufferU: Float
+        val bufferV: Float
+        when (geometry.rotationDegrees) {
+            90 -> { bufferU = v; bufferV = 1f - u }
+            180 -> { bufferU = 1f - u; bufferV = 1f - v }
+            270 -> { bufferU = 1f - v; bufferV = u }
+            else -> { bufferU = u; bufferV = v }
+        }
+
+        val point = SurfaceOrientedMeteringPointFactory(1f, 1f).createPoint(bufferU, bufferV)
+        val action = FocusMeteringAction.Builder(
+            point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
+        ).setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS).build()
+
+        try {
+            camera.cameraControl.startFocusAndMetering(action)
+        } catch (e: IllegalArgumentException) {
+            Log.w(TAG, "Focus point rejected", e)
+            return
+        }
+        showFocusRing(viewX, viewY)
+    }
+
+    private fun showFocusRing(viewX: Float, viewY: Float) {
+        val ring = binding.focusRing
+        ring.removeCallbacks(hideFocusRing)
+        ring.x = viewX - ring.width / 2f
+        ring.y = viewY - ring.height / 2f
+        ring.alpha = 1f
+        ring.scaleX = 1.35f
+        ring.scaleY = 1.35f
+        ring.animate().scaleX(1f).scaleY(1f).setDuration(180).start()
+        ring.postDelayed(hideFocusRing, FOCUS_RING_MS)
+    }
+
+    private val hideFocusRing = Runnable {
+        binding.focusRing.animate().alpha(0f).setDuration(260).start()
     }
 
     private fun applyZoom(ratio: Float) {
@@ -292,7 +386,8 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        val rotated = rotateBitmap(imageProxy.toBitmap(), imageProxy.imageInfo.rotationDegrees)
+        val imageRotation = imageProxy.imageInfo.rotationDegrees
+        val rotated = rotateBitmap(imageProxy.toBitmap(), imageRotation)
         imageProxy.close()
 
         val renderer = previewRenderer.let { current ->
@@ -316,12 +411,24 @@ class MainActivity : AppCompatActivity() {
         // Same compositor the capture uses, so the crop, border and stamp you see are the real ones.
         previewDate.time = System.currentTimeMillis()
         val composed = OverlayCompositor.compose(filtered, preset, previewDate)
-        drawToSurface(composed)
+        drawToSurface(
+            composed,
+            OverlayCompositor.layoutFor(rotated.width, rotated.height, preset),
+            rotated.width,
+            rotated.height,
+            imageRotation
+        )
         if (composed !== filtered) filtered.recycle()
         composed.recycle()
     }
 
-    private fun drawToSurface(bitmap: Bitmap) {
+    private fun drawToSurface(
+        bitmap: Bitmap,
+        layout: OverlayCompositor.Layout,
+        frameWidth: Int,
+        frameHeight: Int,
+        rotationDegrees: Int
+    ) {
         val holder = binding.viewFinder.holder
         // Frames arrive on the camera thread, so the surface can be torn down mid-draw when the
         // activity goes away. Check first, and still guard the lock against losing that race.
@@ -346,6 +453,18 @@ class MainActivity : AppCompatActivity() {
             previewMatrix.setScale(scale, scale)
             previewMatrix.postTranslate(dx, dy)
             canvas.drawBitmap(bitmap, previewMatrix, null)
+
+            // Recorded here rather than computed on tap: this is the transform actually used to
+            // put pixels on screen, so focus can invert exactly what the user is looking at.
+            previewGeometry = PreviewGeometry(
+                destLeft = dx,
+                destTop = dy,
+                scale = scale,
+                layout = layout,
+                frameWidth = frameWidth,
+                frameHeight = frameHeight,
+                rotationDegrees = rotationDegrees
+            )
         } finally {
             try {
                 holder.unlockCanvasAndPost(canvas)
@@ -425,5 +544,7 @@ class MainActivity : AppCompatActivity() {
         private const val TAG = "RetroCam"
         private const val DOUBLE_TAP_ZOOM = 2f
         private const val ZOOM_LABEL_MS = 1400L
+        private const val FOCUS_RING_MS = 1200L
+        private const val FOCUS_HOLD_SECONDS = 4L
     }
 }

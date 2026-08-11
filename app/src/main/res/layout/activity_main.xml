@@ -13,6 +13,13 @@
         android:contentDescription="@string/viewfinder"
         android:focusable="true" />
 
+    <View
+        android:id="@+id/focusRing"
+        android:layout_width="72dp"
+        android:layout_height="72dp"
+        android:alpha="0"
+        android:background="@drawable/focus_ring" />
+
     <TextView
         android:id="@+id/zoomLabel"
         android:layout_width="wrap_content"

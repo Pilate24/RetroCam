@@ -36,48 +36,86 @@ object OverlayCompositor {
     private var formatterPattern = "yyyy M d"
 
     /**
+     * Where the picture sits inside the composed output. Tap-to-focus has to invert this to turn a
+     * screen tap back into a sensor coordinate, so the geometry lives here as the single source of
+     * truth rather than being re-derived — the two drifting apart would aim the focus point at the
+     * wrong part of the scene, which is invisible in code review and obvious in a blurry photo.
+     */
+    data class Layout(
+        val cropLeft: Int,
+        val cropTop: Int,
+        val cropWidth: Int,
+        val cropHeight: Int,
+        val borderLeft: Int,
+        val borderTop: Int,
+        val outputWidth: Int,
+        val outputHeight: Int
+    )
+
+    fun layoutFor(sourceWidth: Int, sourceHeight: Int, preset: FilterPreset): Layout {
+        var cropWidth = sourceWidth
+        var cropHeight = sourceHeight
+
+        val aspect = preset.aspect
+        if (aspect != null && abs(sourceWidth.toFloat() / sourceHeight - aspect) >= 0.001f) {
+            if (sourceWidth.toFloat() / sourceHeight > aspect) {
+                cropWidth = (sourceHeight * aspect).roundToInt().coerceAtMost(sourceWidth)
+            } else {
+                cropHeight = (sourceWidth / aspect).roundToInt().coerceAtMost(sourceHeight)
+            }
+        }
+
+        val frame = preset.frame
+        val side = frame?.let { (cropWidth * it.side).roundToInt() } ?: 0
+        val top = frame?.let { (cropWidth * it.top).roundToInt() } ?: 0
+        val bottom = frame?.let { (cropWidth * it.bottom).roundToInt() } ?: 0
+
+        return Layout(
+            cropLeft = (sourceWidth - cropWidth) / 2,
+            cropTop = (sourceHeight - cropHeight) / 2,
+            cropWidth = cropWidth,
+            cropHeight = cropHeight,
+            borderLeft = side,
+            borderTop = top,
+            outputWidth = cropWidth + side * 2,
+            outputHeight = cropHeight + top + bottom
+        )
+    }
+
+    /**
      * Returns the composed frame, or [source] itself when [preset] has no overlays. Callers must
      * therefore compare by identity before recycling: `if (composed !== source) source.recycle()`.
      */
     fun compose(source: Bitmap, preset: FilterPreset, date: Date): Bitmap {
         if (!preset.hasOverlays) return source
 
-        val cropped = preset.aspect?.let { cropToAspect(source, it) } ?: source
-        val frame = preset.frame
+        val layout = layoutFor(source.width, source.height, preset)
 
-        val side = frame?.let { (cropped.width * it.side).roundToInt() } ?: 0
-        val top = frame?.let { (cropped.width * it.top).roundToInt() } ?: 0
-        val bottom = frame?.let { (cropped.width * it.bottom).roundToInt() } ?: 0
+        val cropped = if (layout.cropWidth == source.width && layout.cropHeight == source.height) {
+            source
+        } else {
+            Bitmap.createBitmap(
+                source, layout.cropLeft, layout.cropTop, layout.cropWidth, layout.cropHeight
+            )
+        }
 
         val output = Bitmap.createBitmap(
-            cropped.width + side * 2,
-            cropped.height + top + bottom,
-            Bitmap.Config.ARGB_8888
+            layout.outputWidth, layout.outputHeight, Bitmap.Config.ARGB_8888
         )
         val canvas = Canvas(output)
-        canvas.drawColor(frame?.color ?: Color.BLACK)
-        canvas.drawBitmap(cropped, side.toFloat(), top.toFloat(), null)
+        canvas.drawColor(preset.frame?.color ?: Color.BLACK)
+        canvas.drawBitmap(cropped, layout.borderLeft.toFloat(), layout.borderTop.toFloat(), null)
 
         // Stamped inside the picture, not on the border — it's exposed onto the film, not printed.
         preset.dateStamp?.let {
-            drawDateStamp(canvas, it, date, side, top, cropped.width, cropped.height)
+            drawDateStamp(
+                canvas, it, date,
+                layout.borderLeft, layout.borderTop, layout.cropWidth, layout.cropHeight
+            )
         }
 
         if (cropped !== source) cropped.recycle()
         return output
-    }
-
-    private fun cropToAspect(source: Bitmap, aspect: Float): Bitmap {
-        val sourceAspect = source.width.toFloat() / source.height
-        if (abs(sourceAspect - aspect) < 0.001f) return source
-
-        return if (sourceAspect > aspect) {
-            val width = (source.height * aspect).roundToInt().coerceAtMost(source.width)
-            Bitmap.createBitmap(source, (source.width - width) / 2, 0, width, source.height)
-        } else {
-            val height = (source.width / aspect).roundToInt().coerceAtMost(source.height)
-            Bitmap.createBitmap(source, 0, (source.height - height) / 2, source.width, height)
-        }
     }
 
     private fun drawDateStamp(
