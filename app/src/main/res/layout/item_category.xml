@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="utf-8"?>
+<TextView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:id="@+id/categoryName"
+    android:layout_width="wrap_content"
+    android:layout_height="match_parent"
+    android:layout_marginStart="4dp"
+    android:layout_marginEnd="4dp"
+    android:background="?android:attr/selectableItemBackground"
+    android:gravity="center"
+    android:paddingStart="12dp"
+    android:paddingEnd="12dp"
+    android:shadowColor="#CC000000"
+    android:shadowDx="0"
+    android:shadowDy="1"
+    android:shadowRadius="4"
+    android:textSize="12sp"
+    android:textStyle="bold" />

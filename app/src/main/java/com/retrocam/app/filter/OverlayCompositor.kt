@@ -21,19 +21,23 @@ import kotlin.math.roundToInt
  */
 object OverlayCompositor {
 
-    // compose() runs on every preview frame, so the objects it needs are built once. Paint and
-    // SimpleDateFormat in particular are expensive to construct and were being churned per frame.
-    //
-    // Neither is thread-safe, which is fine only because both callers — the preview analyzer and
-    // the capture callback — run on MainActivity's single-threaded cameraExecutor. Give capture
-    // its own executor and this needs a lock or a ThreadLocal.
-    private val stampPaint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        textAlign = Paint.Align.RIGHT
-        typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
-        letterSpacing = 0.08f
+    /**
+     * compose() runs on every preview frame, so the objects it needs are built once rather than
+     * churned per frame. Neither Paint nor SimpleDateFormat is thread-safe, and compose() now has
+     * more than one caller — the camera thread and the thumbnail renderer — so they are held
+     * per-thread instead of shared.
+     */
+    private class StampTools {
+        val paint = Paint(Paint.ANTI_ALIAS_FLAG).apply {
+            textAlign = Paint.Align.RIGHT
+            typeface = Typeface.create(Typeface.MONOSPACE, Typeface.BOLD)
+            letterSpacing = 0.08f
+        }
+        var formatter: SimpleDateFormat = SimpleDateFormat(DEFAULT_PATTERN, Locale.US)
+        var pattern: String = DEFAULT_PATTERN
     }
-    private var formatter = SimpleDateFormat("yyyy M d", Locale.US)
-    private var formatterPattern = "yyyy M d"
+
+    private val stampTools = ThreadLocal.withInitial { StampTools() }
 
     /**
      * Where the picture sits inside the composed output. Tap-to-focus has to invert this to turn a
@@ -127,21 +131,22 @@ object OverlayCompositor {
         imageWidth: Int,
         imageHeight: Int
     ) {
-        val paint = stampPaint.apply {
+        val tools = stampTools.get()!!
+        val paint = tools.paint.apply {
             color = stamp.color
             textSize = imageHeight * stamp.size
             // The amber bleed of a real optical date-back, not a drop shadow.
             if (stamp.glow) setShadowLayer(textSize * 0.45f, 0f, 0f, stamp.color) else clearShadowLayer()
         }
 
-        if (stamp.format != formatterPattern) {
-            formatter = SimpleDateFormat(stamp.format, Locale.US)
-            formatterPattern = stamp.format
+        if (stamp.format != tools.pattern) {
+            tools.formatter = SimpleDateFormat(stamp.format, Locale.US)
+            tools.pattern = stamp.format
         }
 
         val inset = imageWidth * INSET_FRACTION
         canvas.drawText(
-            formatter.format(date),
+            tools.formatter.format(date),
             imageLeft + imageWidth - inset,
             imageTop + imageHeight - inset,
             paint
@@ -149,4 +154,5 @@ object OverlayCompositor {
     }
 
     private const val INSET_FRACTION = 0.045f
+    private const val DEFAULT_PATTERN = "yyyy M d"
 }

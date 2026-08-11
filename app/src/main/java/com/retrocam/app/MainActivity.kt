@@ -39,7 +39,9 @@ import com.retrocam.app.filter.OverlayCompositor
 import com.retrocam.app.filter.PresetRepository
 import com.retrocam.app.filter.ShaderRenderer
 import com.retrocam.app.gallery.GalleryActivity
+import com.retrocam.app.ui.CategoryAdapter
 import com.retrocam.app.ui.FilterCarouselAdapter
+import com.retrocam.app.ui.ThumbnailCache
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -63,12 +65,29 @@ class MainActivity : AppCompatActivity() {
     private val previewMatrix = Matrix()
     private val previewDate = Date()
 
-    private var presets: List<FilterPreset> = emptyList()
+    /** Everything that loaded, and the subset the chosen category is showing. */
+    private var allPresets: List<FilterPreset> = emptyList()
+    private var visiblePresets: List<FilterPreset> = emptyList()
+
     private var carouselAdapter: FilterCarouselAdapter? = null
+    private var thumbnails: ThumbnailCache? = null
     private val snapHelper = LinearSnapHelper()
 
-    private var selectedIndex = 0
+    /**
+     * Tracked by id rather than index: filtering by category renumbers the carousel, and an index
+     * would silently point at a different look.
+     */
+    private var selectedPresetId: String = ""
     private var intensity = 1f
+
+    /** Thumbnails only need to look like the scene, so the source frame is refreshed rarely. */
+    private var lastThumbnailSourceNanos = 0L
+
+    /** Distinguishes a user swipe from a layout settle; see the carousel's scroll listener. */
+    private var userIsScrolling = false
+
+    private var framesSinceReport = 0
+    private var fpsWindowStartNanos = 0L
 
     /**
      * The selected preset with the intensity already applied. Written on the main thread whenever
@@ -99,12 +118,17 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, GalleryActivity::class.java))
         }
 
-        presets = PresetRepository.load(assets)
-        if (presets.isEmpty()) {
+        allPresets = PresetRepository.load(assets)
+        if (allPresets.isEmpty()) {
             Toast.makeText(this, R.string.no_presets, Toast.LENGTH_LONG).show()
             finish()
             return
         }
+        visiblePresets = allPresets
+        selectedPresetId = allPresets.first().id
+        thumbnails = ThumbnailCache()
+
+        setUpCategories()
         setUpCarousel()
         setUpIntensitySlider()
         setUpZoomGestures()
@@ -121,19 +145,55 @@ class MainActivity : AppCompatActivity() {
 
     // --- filter carousel ---------------------------------------------------
 
+    private fun setUpCategories() {
+        val categories = PresetRepository.categoriesOf(allPresets)
+        binding.categoryTabs.layoutManager =
+            LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
+        binding.categoryTabs.adapter = CategoryAdapter(categories) { category -> showCategory(category) }
+    }
+
+    /**
+     * Narrows the carousel. The active look is deliberately left alone — changing category is a
+     * browsing action, and having it silently re-grade the viewfinder would be hostile.
+     */
+    private fun showCategory(category: String) {
+        visiblePresets = if (category == PresetRepository.CATEGORY_ALL) allPresets
+        else allPresets.filter { it.category == category }
+        if (visiblePresets.isEmpty()) return
+
+        val selected = visiblePresets.indexOfFirst { it.id == selectedPresetId }.coerceAtLeast(0)
+        carouselAdapter?.submit(visiblePresets, selected)
+        binding.filterCarousel.post {
+            (binding.filterCarousel.layoutManager as? LinearLayoutManager)
+                ?.scrollToPositionWithOffset(selected, binding.filterCarousel.paddingStart)
+        }
+    }
+
     private fun setUpCarousel() {
         val layoutManager = LinearLayoutManager(this, RecyclerView.HORIZONTAL, false)
-        val adapter = FilterCarouselAdapter(presets) { position -> centerOn(position) }
+        val adapter = FilterCarouselAdapter(visiblePresets, thumbnails) { position ->
+            centerOn(position)
+        }
         carouselAdapter = adapter
 
         binding.filterCarousel.layoutManager = layoutManager
         binding.filterCarousel.adapter = adapter
         snapHelper.attachToRecyclerView(binding.filterCarousel)
 
-        // Whatever ends up centred after a swipe becomes the active look.
+        // Whatever the user swipes to the centre becomes the active look.
+        //
+        // Only a real drag counts. Laying out the carousel — applying the centring padding below,
+        // or refilling it for a new category — also ends in SCROLL_STATE_IDLE, and treating that
+        // as a selection would silently activate whichever filter happened to land at the centre.
+        // A user scroll always passes through DRAGGING first; a layout settle never does.
         binding.filterCarousel.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
-                if (newState != RecyclerView.SCROLL_STATE_IDLE) return
+                if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    userIsScrolling = true
+                    return
+                }
+                if (newState != RecyclerView.SCROLL_STATE_IDLE || !userIsScrolling) return
+                userIsScrolling = false
                 val snapped = snapHelper.findSnapView(layoutManager) ?: return
                 selectPreset(layoutManager.getPosition(snapped))
             }
@@ -150,14 +210,17 @@ class MainActivity : AppCompatActivity() {
     private fun centerOn(position: Int) {
         val carousel = binding.filterCarousel
         val layoutManager = carousel.layoutManager as? LinearLayoutManager ?: return
+        // Apply on tap rather than when the scroll animation ends: the filter should change the
+        // instant it's tapped, and the listener now ignores non-drag settles anyway.
+        selectPreset(position)
+
         val child = layoutManager.findViewByPosition(position)
         if (child == null) {
             layoutManager.scrollToPositionWithOffset(position, carousel.paddingStart)
-            selectPreset(position)
             return
         }
         val delta = (child.left + child.right) / 2 - carousel.width / 2
-        if (delta == 0) selectPreset(position) else carousel.smoothScrollBy(delta, 0)
+        if (delta != 0) carousel.smoothScrollBy(delta, 0)
     }
 
     private fun setUpIntensitySlider() {
@@ -168,14 +231,14 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun selectPreset(position: Int) {
-        if (position !in presets.indices) return
-        selectedIndex = position
+        if (position !in visiblePresets.indices) return
+        selectedPresetId = visiblePresets[position].id
         carouselAdapter?.selectedPosition = position
         refreshActivePreset()
     }
 
     private fun refreshActivePreset() {
-        val base = presets.getOrNull(selectedIndex) ?: return
+        val base = allPresets.firstOrNull { it.id == selectedPresetId } ?: return
         activePreset = base.scaledBy(intensity)
         binding.intensityLabel.text =
             getString(R.string.intensity_label, base.name, (intensity * 100).roundToInt())
@@ -399,7 +462,16 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        val elapsedSeconds = (System.nanoTime() - startTimeNanos) / 1_000_000_000f
+        // Refresh the thumbnails' source scene occasionally. Rebuilding them is the expensive part
+        // (one render per preset), so this is minutes-scale, not per-frame.
+        val now = System.nanoTime()
+        if (now - lastThumbnailSourceNanos > THUMBNAIL_REFRESH_NANOS) {
+            lastThumbnailSourceNanos = now
+            thumbnails?.setSource(rotated)
+            runOnUiThread { carouselAdapter?.refreshThumbnails() }
+        }
+
+        val elapsedSeconds = (now - startTimeNanos) / 1_000_000_000f
         // A frame that fails to render is dropped: the preview stutters, but the app stays alive.
         val filtered = try {
             renderer.render(rotated, elapsedSeconds, preset)
@@ -420,6 +492,30 @@ class MainActivity : AppCompatActivity() {
         )
         if (composed !== filtered) filtered.recycle()
         composed.recycle()
+
+        reportFrameRate(now, rotated.width, rotated.height)
+    }
+
+    /**
+     * Periodic throughput log. The filter pipeline is the easiest thing in this app to make slow
+     * without noticing, so it reports what it is actually achieving rather than leaving it to be
+     * guessed at from how the preview feels.
+     */
+    private fun reportFrameRate(nowNanos: Long, frameWidth: Int, frameHeight: Int) {
+        framesSinceReport++
+        if (fpsWindowStartNanos == 0L) {
+            fpsWindowStartNanos = nowNanos
+            return
+        }
+        val elapsed = nowNanos - fpsWindowStartNanos
+        if (elapsed < FPS_REPORT_NANOS) return
+
+        val fps = framesSinceReport * 1_000_000_000.0 / elapsed
+        Log.i(TAG, "preview %.1f fps at %dx%d (%s)".format(
+            fps, frameWidth, frameHeight, activePreset?.id ?: "-"
+        ))
+        framesSinceReport = 0
+        fpsWindowStartNanos = nowNanos
     }
 
     private fun drawToSurface(
@@ -537,6 +633,7 @@ class MainActivity : AppCompatActivity() {
     override fun onDestroy() {
         super.onDestroy()
         previewRenderer?.close()
+        thumbnails?.close()
         cameraExecutor.shutdown()
     }
 
@@ -546,5 +643,7 @@ class MainActivity : AppCompatActivity() {
         private const val ZOOM_LABEL_MS = 1400L
         private const val FOCUS_RING_MS = 1200L
         private const val FOCUS_HOLD_SECONDS = 4L
+        private const val THUMBNAIL_REFRESH_NANOS = 20_000_000_000L
+        private const val FPS_REPORT_NANOS = 3_000_000_000L
     }
 }

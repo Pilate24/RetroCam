@@ -1,11 +1,4 @@
 {
   "name": "Original",
-  "lut": "luts/identity.png",
-  "lutIntensity": 1.0,
-  "grainAmount": 0.0,
-  "vignetteAmount": 0.0,
-  "chromaAmount": 0.0,
-  "halationAmount": 0.0,
-  "halationRadius": 0.0,
-  "halationThreshold": 1.0
+  "category": "Film"
 }

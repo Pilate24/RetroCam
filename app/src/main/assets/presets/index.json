@@ -1,7 +1,12 @@
-[
-  "original",
-  "kodak",
-  "polaroid",
-  "disposable",
-  "vhs"
-]
+{
+  "presets": [
+    "original",
+    "kodak",
+    "polaroid",
+    "disposable",
+    "vhs"
+  ],
+  "packs": [
+    "presets/retro_pack.json"
+  ]
+}

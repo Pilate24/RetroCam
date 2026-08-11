@@ -9,8 +9,7 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /**
- * One "look". Adding a filter is adding a JSON file under `assets/presets/` plus a LUT PNG —
- * no code and no new shader.
+ * One "look". Adding a filter is adding a JSON entry — no code and no new shader.
  *
  * [shader] feeds [FilterShader]'s uniforms directly; [aspect], [frame] and [dateStamp] are applied
  * afterwards by [OverlayCompositor] because they change the frame's shape rather than its pixels.
@@ -18,6 +17,8 @@ import org.json.JSONObject
 data class FilterPreset(
     val id: String,
     val name: String,
+    val category: String,
+    /** Optional colour lookup table. Presets that grade parametrically get the identity LUT. */
     val lut: Bitmap,
     val shader: ShaderParams,
     /** Width / height to centre-crop to, or null to keep the sensor's own aspect. */
@@ -30,8 +31,12 @@ data class FilterPreset(
 
     /**
      * Dials the whole look up or down for the intensity slider. Only *strengths* scale — radii,
-     * counts, thresholds and widths are the shape of an effect, not its amount, and scaling them
-     * would change the look rather than weaken it.
+     * counts, thresholds, sizes and origins are the shape of an effect, not its amount, and
+     * scaling them would change the look rather than weaken it.
+     *
+     * Every tone and colour value is a signed delta around neutral, so scaling to 0 lands exactly
+     * on the untouched image. That's what makes intensity an interpolation of the parameters
+     * rather than a cross-fade against an overlay.
      *
      * Crop, border and date stamp deliberately do not scale: they are the format the look shoots
      * in, not part of its processing, so a Polaroid stays square at any intensity.
@@ -41,42 +46,107 @@ data class FilterPreset(
 }
 
 /**
- * Uniforms for [FilterShader]. Spatial values are relative to the frame, never pixels: `*Radius`
- * and `chromaAmount` are percentages of the short side, `scanlineCount` is lines across the full
- * height. That is what keeps a 640px preview and a 4000px capture looking identical.
+ * Uniforms for [FilterShader], already normalised into shader units. Spatial values are relative
+ * to the frame, never pixels: `*Radius` and the separation amounts are percentages of the short
+ * side, `scanlineCount` is lines across the full height. That is what keeps a 640px preview and a
+ * 4000px capture looking identical.
+ *
+ * Presets are authored on a friendlier -100..100 scale; [PresetRepository] does the conversion.
  */
 data class ShaderParams(
-    val lutIntensity: Float = 1f,
-    val grainAmount: Float = 0f,
-    val vignetteAmount: Float = 0f,
+    val lutIntensity: Float = 0f,
+
+    val exposure: Float = 0f,
+    val brightness: Float = 0f,
+    val contrast: Float = 0f,
+    val saturation: Float = 0f,
+    val temperature: Float = 0f,
+    val tint: Float = 0f,
+    val highlights: Float = 0f,
+    val shadows: Float = 0f,
+    val fade: Float = 0f,
+
+    val blurAmount: Float = 0f,
+    val motionBlur: Float = 0f,
+    val motionAngle: Float = 0f,
+    val sharpness: Float = 0f,
+    val clarity: Float = 0f,
     val chromaAmount: Float = 0f,
+    val rgbShift: Float = 0f,
+    val anaglyph: Float = 0f,
+    val colorBleed: Float = 0f,
+
     val halationAmount: Float = 0f,
-    val halationRadius: Float = 0f,
-    val halationThreshold: Float = 1f,
-    val scanlineAmount: Float = 0f,
-    val scanlineCount: Float = 0f,
-    val syncBarAmount: Float = 0f,
-    val syncBarWidth: Float = 0.05f,
-    val syncBarShift: Float = 0f,
+    val halationRadius: Float = 0.8f,
+    val halationThreshold: Float = 0.72f,
+    val glowAmount: Float = 0f,
+    val glowThreshold: Float = 0.65f,
     val leakAmount: Float = 0f,
-    val leakX: Float = 1f,
-    val leakY: Float = 0f,
-    val leakRadius: Float = 0.5f,
+    val leakColor: FloatArray = floatArrayOf(1f, 0.52f, 0.22f),
+    val leakX: Float = 1.05f,
+    val leakY: Float = 0.2f,
+    val leakRadius: Float = 0.55f,
+    val burnAmount: Float = 0f,
     val flashAmount: Float = 0f,
-    val flashHardness: Float = 2f
+    val flashHardness: Float = 2f,
+
+    val scanlineAmount: Float = 0f,
+    val scanlineCount: Float = 320f,
+    val syncBarAmount: Float = 0f,
+    val syncBarWidth: Float = 0.035f,
+    val syncBarShift: Float = 0.012f,
+    val trackingAmount: Float = 0f,
+    val noiseAmount: Float = 0f,
+
+    val grainAmount: Float = 0f,
+    val grainSize: Float = 1f,
+    val dustAmount: Float = 0f,
+    val scratchAmount: Float = 0f,
+    val vignetteAmount: Float = 0f
 ) {
-    fun scaledBy(amount: Float) = copy(
-        lutIntensity = lutIntensity * amount,
-        grainAmount = grainAmount * amount,
-        vignetteAmount = vignetteAmount * amount,
-        chromaAmount = chromaAmount * amount,
-        halationAmount = halationAmount * amount,
-        scanlineAmount = scanlineAmount * amount,
-        syncBarAmount = syncBarAmount * amount,
-        syncBarShift = syncBarShift * amount,
-        leakAmount = leakAmount * amount,
-        flashAmount = flashAmount * amount
+    fun scaledBy(a: Float) = copy(
+        lutIntensity = lutIntensity * a,
+        exposure = exposure * a,
+        brightness = brightness * a,
+        contrast = contrast * a,
+        saturation = saturation * a,
+        temperature = temperature * a,
+        tint = tint * a,
+        highlights = highlights * a,
+        shadows = shadows * a,
+        fade = fade * a,
+        blurAmount = blurAmount * a,
+        motionBlur = motionBlur * a,
+        sharpness = sharpness * a,
+        clarity = clarity * a,
+        chromaAmount = chromaAmount * a,
+        rgbShift = rgbShift * a,
+        anaglyph = anaglyph * a,
+        colorBleed = colorBleed * a,
+        halationAmount = halationAmount * a,
+        glowAmount = glowAmount * a,
+        leakAmount = leakAmount * a,
+        burnAmount = burnAmount * a,
+        flashAmount = flashAmount * a,
+        scanlineAmount = scanlineAmount * a,
+        syncBarAmount = syncBarAmount * a,
+        syncBarShift = syncBarShift * a,
+        trackingAmount = trackingAmount * a,
+        noiseAmount = noiseAmount * a,
+        grainAmount = grainAmount * a,
+        dustAmount = dustAmount * a,
+        scratchAmount = scratchAmount * a,
+        vignetteAmount = vignetteAmount * a
     )
+
+    // FloatArray in a data class breaks structural equality; these keep it sane.
+    override fun equals(other: Any?): Boolean {
+        if (this === other) return true
+        if (other !is ShaderParams) return false
+        return toString() == other.toString() && leakColor.contentEquals(other.leakColor)
+    }
+
+    override fun hashCode(): Int = 31 * toString().hashCode() + leakColor.contentHashCode()
 }
 
 /** Border drawn around the image. Fractions are of the *image width*, so they scale with output. */
@@ -99,65 +169,161 @@ object PresetRepository {
 
     private const val TAG = "RetroCam"
     private const val INDEX = "presets/index.json"
+    private const val IDENTITY_LUT = "luts/identity.png"
+
+    const val CATEGORY_ALL = "All"
 
     /**
-     * Reads `presets/index.json` for the carousel order, then each preset beside it. LUT bitmaps
-     * are cached by path so presets can share one. A preset that fails to parse is skipped rather
-     * than taking the app down with it.
+     * Reads `presets/index.json`, which holds the carousel order as either a bare array of ids
+     * (one file each, the original layout) or an object that can also name *packs* — single files
+     * holding many presets, so a themed set ships as one asset instead of seventy.
+     *
+     * LUT bitmaps are cached by path, so the many parametric presets all share one identity LUT
+     * rather than decoding a megabyte each. A preset that fails to parse is skipped rather than
+     * taking the app down with it.
      */
     fun load(assets: AssetManager): List<FilterPreset> {
-        val ids = try {
-            JSONArray(assets.readText(INDEX))
+        val raw = try {
+            assets.readText(INDEX)
         } catch (e: Exception) {
             Log.e(TAG, "Could not read $INDEX", e)
+            return emptyList()
+        }
+
+        val singles = mutableListOf<String>()
+        val packs = mutableListOf<String>()
+        try {
+            if (raw.trimStart().startsWith("[")) {
+                JSONArray(raw).forEachString { singles += it }
+            } else {
+                val index = JSONObject(raw)
+                index.optJSONArray("presets")?.forEachString { singles += it }
+                index.optJSONArray("packs")?.forEachString { packs += it }
+            }
+        } catch (e: Exception) {
+            Log.e(TAG, "Malformed $INDEX", e)
             return emptyList()
         }
 
         val lutCache = mutableMapOf<String, Bitmap>()
         val presets = mutableListOf<FilterPreset>()
 
-        for (i in 0 until ids.length()) {
-            val id = ids.getString(i)
+        for (id in singles) {
             try {
-                val json = JSONObject(assets.readText("presets/$id.json"))
-                val lutPath = json.getString("lut")
-
-                presets += FilterPreset(
-                    id = id,
-                    name = json.optString("name", id),
-                    lut = lutCache.getOrPut(lutPath) { assets.readBitmap(lutPath) },
-                    shader = json.readShaderParams(),
-                    aspect = json.optString("aspect").takeIf { it.isNotEmpty() }?.toAspect(),
-                    frame = json.optJSONObject("frame")?.toFrame(),
-                    dateStamp = json.optJSONObject("dateStamp")?.toDateStamp()
-                )
+                presets += JSONObject(assets.readText("presets/$id.json")).toPreset(id, assets, lutCache)
             } catch (e: Exception) {
                 Log.e(TAG, "Skipping preset '$id'", e)
+            }
+        }
+
+        for (path in packs) {
+            try {
+                val array = JSONArray(assets.readText(path))
+                for (i in 0 until array.length()) {
+                    val json = array.getJSONObject(i)
+                    val id = json.optString("id", "${path.substringAfterLast('/')}_$i")
+                    try {
+                        presets += json.toPreset(id, assets, lutCache)
+                    } catch (e: Exception) {
+                        Log.e(TAG, "Skipping preset '$id' from $path", e)
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Skipping pack '$path'", e)
             }
         }
         return presets
     }
 
-    private fun JSONObject.readShaderParams() = ShaderParams(
-        lutIntensity = optFloat("lutIntensity", 1f),
-        grainAmount = optFloat("grainAmount", 0f),
-        vignetteAmount = optFloat("vignetteAmount", 0f),
-        chromaAmount = optFloat("chromaAmount", 0f),
-        halationAmount = optFloat("halationAmount", 0f),
-        halationRadius = optFloat("halationRadius", 0f),
-        halationThreshold = optFloat("halationThreshold", 1f),
-        scanlineAmount = optFloat("scanlineAmount", 0f),
-        scanlineCount = optFloat("scanlineCount", 0f),
-        syncBarAmount = optFloat("syncBarAmount", 0f),
-        syncBarWidth = optFloat("syncBarWidth", 0.05f),
-        syncBarShift = optFloat("syncBarShift", 0f),
-        leakAmount = optFloat("leakAmount", 0f),
-        leakX = optFloat("leakX", 1f),
-        leakY = optFloat("leakY", 0f),
-        leakRadius = optFloat("leakRadius", 0.5f),
-        flashAmount = optFloat("flashAmount", 0f),
-        flashHardness = optFloat("flashHardness", 2f)
+    /** Category tabs, in display order, derived from what actually loaded. */
+    fun categoriesOf(presets: List<FilterPreset>): List<String> {
+        val order = listOf("Film", "Vintage", "80s/90s", "Disposable", "B&W", "VHS", "Effects")
+        val present = presets.map { it.category }.toSet()
+        return listOf(CATEGORY_ALL) + order.filter { it in present } +
+            present.filter { it !in order }.sorted()
+    }
+
+    private fun JSONObject.toPreset(
+        id: String,
+        assets: AssetManager,
+        lutCache: MutableMap<String, Bitmap>
+    ): FilterPreset {
+        val lutPath = optString("lut").takeIf { it.isNotEmpty() } ?: IDENTITY_LUT
+        return FilterPreset(
+            id = id,
+            name = optString("name", id),
+            category = optString("category", "Effects"),
+            lut = lutCache.getOrPut(lutPath) { assets.readBitmap(lutPath) },
+            shader = readShaderParams(hasLut = has("lut")),
+            aspect = optString("aspect").takeIf { it.isNotEmpty() }?.toAspect(),
+            frame = optJSONObject("frame")?.toFrame(),
+            dateStamp = optJSONObject("dateStamp")?.toDateStamp()
+        )
+    }
+
+    /**
+     * Presets are authored on a -100..100 scale, which is what a person can reason about; the
+     * shader wants normalised units. The factor beside each field is the full-scale value at 100.
+     *
+     * Presets without a LUT get lutIntensity 0 so the identity lookup is skipped entirely — two
+     * texture samples saved per pixel on the majority of filters.
+     */
+    private fun JSONObject.readShaderParams(hasLut: Boolean) = ShaderParams(
+        lutIntensity = if (hasLut) optFloat("lutIntensity", 1f) else 0f,
+
+        exposure = scaled("exposure", 2f),
+        brightness = scaled("brightness", 0.25f),
+        contrast = scaled("contrast", 0.6f),
+        saturation = scaled("saturation", 1f),
+        temperature = scaled("temperature", 1f),
+        tint = scaled("tint", 1f),
+        highlights = scaled("highlights", 0.3f),
+        shadows = scaled("shadows", 0.3f),
+        fade = scaled("fade", 1f),
+
+        blurAmount = scaled("blur", 2f),
+        motionBlur = scaled("motionBlur", 2.5f),
+        motionAngle = Math.toRadians(optFloat("motionAngle", 0f).toDouble()).toFloat(),
+        sharpness = scaled("sharpness", 1f),
+        clarity = scaled("clarity", 0.5f),
+        chromaAmount = scaled("chromaticAberration", 1.5f),
+        rgbShift = scaled("rgbShift", 1.5f),
+        anaglyph = scaled("anaglyph", 1.5f),
+        colorBleed = scaled("colorBleed", 1f),
+
+        halationAmount = scaled("halation", 1.2f),
+        halationRadius = optFloat("halationRadius", 0.8f),
+        halationThreshold = optFloat("halationThreshold", 0.72f),
+        glowAmount = scaled("glow", 1.2f),
+        glowThreshold = optFloat("glowThreshold", 0.65f),
+        leakAmount = scaled("lightLeak", 1.2f),
+        leakColor = optString("leakColor").takeIf { it.isNotEmpty() }?.toRgb()
+            ?: floatArrayOf(1f, 0.52f, 0.22f),
+        leakX = optFloat("leakX", 1.05f),
+        leakY = optFloat("leakY", 0.2f),
+        leakRadius = optFloat("leakRadius", 0.55f),
+        burnAmount = scaled("filmBurn", 0.8f),
+        flashAmount = scaled("flash", 0.5f),
+        flashHardness = optFloat("flashHardness", 2f),
+
+        scanlineAmount = scaled("scanlines", 0.5f),
+        scanlineCount = optFloat("scanlineCount", 320f),
+        syncBarAmount = scaled("syncBar", 0.4f),
+        syncBarWidth = optFloat("syncBarWidth", 0.035f),
+        syncBarShift = optFloat("syncBarShift", 0.012f),
+        trackingAmount = scaled("tracking", 1f),
+        noiseAmount = scaled("noise", 0.35f),
+
+        grainAmount = scaled("grain", 0.18f),
+        // 0..100 maps to a half-size..double-size grain cell, 50 being the reference.
+        grainSize = 0.5f + optFloat("grainSize", 50f) / 100f * 1.5f,
+        dustAmount = scaled("dust", 1f),
+        scratchAmount = scaled("scratches", 1f),
+        vignetteAmount = scaled("vignette", 1.5f)
     )
+
+    private fun JSONObject.scaled(key: String, fullScale: Float): Float =
+        optFloat(key, 0f) / 100f * fullScale
 
     private fun JSONObject.toFrame() = Frame(
         color = Color.parseColor(optString("color", "#FFFFFFFF")),
@@ -173,11 +339,20 @@ object PresetRepository {
         glow = optBoolean("glow", true)
     )
 
+    private fun String.toRgb(): FloatArray {
+        val c = Color.parseColor(this)
+        return floatArrayOf(Color.red(c) / 255f, Color.green(c) / 255f, Color.blue(c) / 255f)
+    }
+
     /** Accepts "4:3" or a bare number. */
     private fun String.toAspect(): Float {
         val parts = split(":")
         return if (parts.size == 2) parts[0].trim().toFloat() / parts[1].trim().toFloat()
         else trim().toFloat()
+    }
+
+    private inline fun JSONArray.forEachString(action: (String) -> Unit) {
+        for (i in 0 until length()) action(getString(i))
     }
 
     private fun AssetManager.readText(path: String): String =

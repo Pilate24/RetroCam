@@ -67,13 +67,25 @@
             android:valueTo="1.0"
             app:labelBehavior="gone" />
 
+        <!-- Filters by category. Selection here only narrows the carousel below. -->
+        <androidx.recyclerview.widget.RecyclerView
+            android:id="@+id/categoryTabs"
+            android:layout_width="match_parent"
+            android:layout_height="30dp"
+            android:layout_marginTop="4dp"
+            android:clipToPadding="false"
+            android:orientation="horizontal"
+            android:overScrollMode="never"
+            android:paddingStart="12dp"
+            android:paddingEnd="12dp" />
+
         <!-- The centred item is the active look; tapping any item scrolls it to centre. -->
         <androidx.recyclerview.widget.RecyclerView
             android:id="@+id/filterCarousel"
             android:layout_width="match_parent"
-            android:layout_height="44dp"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="14dp"
+            android:layout_height="86dp"
+            android:layout_marginTop="6dp"
+            android:layout_marginBottom="10dp"
             android:clipToPadding="false"
             android:orientation="horizontal"
             android:overScrollMode="never" />
