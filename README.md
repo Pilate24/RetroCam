@@ -2,7 +2,7 @@
 
 CameraX + AGSL (`RuntimeShader`) retro camera. minSdk 33 (Android 13+).
 
-**[Download the APK](https://github.com/Pilate24/RetroCam/releases/latest)** — debug build, sideload only. 137 filters, camera emulation, face detection, zoom and tap-to-focus. See "Verified" below for what has actually been measured on a device.
+**[Download the APK](https://github.com/Pilate24/RetroCam/releases/latest)** — debug build, sideload only. 137 filters, camera emulation, zoom and tap-to-focus. See "Verified" below for what has actually been measured on a device.
 
 ## What's here
 
@@ -60,8 +60,10 @@ py tools/verify_camera_presets.py app/src/main/assets/presets/camera_pack.json
 
 This exists because "distinct parameters" is not the requirement — "looks noticeably different"
 is, and they are not the same thing. It caught three Cinematic presets rendering within 1.7/255 of
-each other, which would have made them three identical entries in the picker. Current floor: every
-camera is ≥5.9/255 from the untouched image and ≥2.6/255 from every other camera.
+each other, which would have made them three identical entries in the picker. It also bounds the
+other end: presets are checked for clipping, so "stronger" can't quietly become "blown out".
+Current floor: every camera is ≥9.7/255 from the untouched image and ≥3.1/255 from every other,
+with worst-case clipping at 17%.
 
 **Compare mode** (the split-rectangle button in the top bar) freezes one preview frame and grades
 it through every camera at once; tap a tile to apply it. The frame is frozen deliberately —
@@ -154,7 +156,6 @@ Run on a Samsung SM-S711B (Android 14), checked against logcat rather than by ey
 - **Camera presets** hold frame rate: 30.2 fps on Sony Vivid, 29.9 on Canon Warm, against a 27.4–30.1 baseline. Zero dropped frames.
 - **Camera category** filters the carousel correctly, and capture writes `RetroCam_cam_sony_natural_*.jpg` at full 3060×4080.
 - **Compare mode** opens, renders tiles with Original pinned first, and tapping a tile applies that camera (verified Original → Sony Vivid).
-- **Face detection** reports supported, max 16 faces.
 
 Still unverified:
 

@@ -8,15 +8,6 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
-import android.graphics.PointF
-import android.graphics.Rect
-import android.graphics.RectF
-import android.hardware.camera2.CameraCharacteristics
-import android.hardware.camera2.CameraCaptureSession
-import android.hardware.camera2.CameraMetadata
-import android.hardware.camera2.CaptureRequest
-import android.hardware.camera2.CaptureResult
-import android.hardware.camera2.TotalCaptureResult
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
@@ -27,11 +18,7 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.Toast
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.annotation.OptIn
 import androidx.appcompat.app.AppCompatActivity
-import androidx.camera.camera2.interop.Camera2CameraInfo
-import androidx.camera.camera2.interop.Camera2Interop
-import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
@@ -68,7 +55,6 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.roundToInt
 import kotlin.random.Random
 
-@OptIn(markerClass = [ExperimentalCamera2Interop::class])
 class MainActivity : AppCompatActivity() {
 
     private lateinit var binding: ActivityMainBinding
@@ -76,9 +62,6 @@ class MainActivity : AppCompatActivity() {
 
     private var imageCapture: ImageCapture? = null
     private var camera: Camera? = null
-
-    /** Fallback coordinate space for face rectangles when no crop region is reported. */
-    private var sensorActiveArray: Rect? = null
     private var previewRenderer: ShaderRenderer? = null
     private val startTimeNanos = System.nanoTime()
 
@@ -115,6 +98,8 @@ class MainActivity : AppCompatActivity() {
     private var timerSeconds = 0
     private var aspect = AspectChoice.AUTO
     private var countingDown = false
+    private var surpriseMode = false
+    private var lastSurpriseId: String? = null
 
     /**
      * The selected preset with the intensity already applied. Written on the main thread whenever
@@ -291,20 +276,11 @@ class MainActivity : AppCompatActivity() {
                 .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
                 .build()
 
-            val analysisBuilder = ImageAnalysis.Builder()
+            val analysis = ImageAnalysis.Builder()
                 .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
                 .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
                 .setResolutionSelector(resolutionSelector)
-
-            // Ask the HAL for face rectangles and listen for the results it already produces.
-            Camera2Interop.Extender(analysisBuilder)
-                .setCaptureRequestOption(
-                    CaptureRequest.STATISTICS_FACE_DETECT_MODE,
-                    CameraMetadata.STATISTICS_FACE_DETECT_MODE_SIMPLE
-                )
-                .setSessionCaptureCallback(faceCaptureCallback)
-
-            val analysis = analysisBuilder.build()
+                .build()
                 .also { it.setAnalyzer(cameraExecutor, ::processFrame) }
 
             val capture = ImageCapture.Builder()
@@ -319,32 +295,11 @@ class MainActivity : AppCompatActivity() {
                     this, CameraSelector.DEFAULT_BACK_CAMERA, analysis, capture
                 )
                 observeZoom()
-                readCameraCharacteristics()
                 setStatus(R.string.status_ready)
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
             }
         }, ContextCompat.getMainExecutor(this))
-    }
-
-    private fun readCameraCharacteristics() {
-        val info = camera?.cameraInfo ?: return
-        try {
-            val camera2Info = Camera2CameraInfo.from(info)
-            sensorActiveArray =
-                camera2Info.getCameraCharacteristic(CameraCharacteristics.SENSOR_INFO_ACTIVE_ARRAY_SIZE)
-            val modes = camera2Info.getCameraCharacteristic(
-                CameraCharacteristics.STATISTICS_INFO_AVAILABLE_FACE_DETECT_MODES
-            )
-            val maxFaces = camera2Info.getCameraCharacteristic(
-                CameraCharacteristics.STATISTICS_INFO_MAX_FACE_COUNT
-            ) ?: 0
-            val supported = maxFaces > 0 &&
-                modes?.any { it != CameraMetadata.STATISTICS_FACE_DETECT_MODE_OFF } == true
-            Log.i(TAG, "face detection supported=$supported maxFaces=$maxFaces")
-        } catch (e: Exception) {
-            Log.w(TAG, "Could not read camera characteristics", e)
-        }
     }
 
     // --- status chip -------------------------------------------------------
@@ -410,6 +365,14 @@ class MainActivity : AppCompatActivity() {
         }
         binding.gridButton.alpha = 0.65f
 
+        binding.surpriseButton.setOnClickListener {
+            surpriseMode = !surpriseMode
+            binding.surpriseButton.alpha = if (surpriseMode) 1f else 0.65f
+            setStatus(if (surpriseMode) R.string.surprise_status else R.string.status_ready)
+            toast(getString(if (surpriseMode) R.string.surprise_on else R.string.surprise_off))
+        }
+        binding.surpriseButton.alpha = 0.65f
+
         binding.compareButton.setOnClickListener {
             val frame = latestFrame
             if (frame == null) {
@@ -448,6 +411,29 @@ class MainActivity : AppCompatActivity() {
 
     private fun toast(message: String) =
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+
+    /**
+     * Surprise mode: the shot is developed with a filter you haven't seen.
+     *
+     * This is the one place the app deliberately breaks its own preview-matches-photo rule. Every
+     * other path goes to some trouble to keep them identical; here not knowing is the feature, the
+     * way a disposable camera doesn't show you anything until it's developed.
+     */
+    private fun rollRandomPreset(): FilterPreset? {
+        if (allPresets.isEmpty()) return null
+        // Avoid dealing the same look twice running — two identical "surprises" reads as a bug.
+        val pool = allPresets.filter { it.id != lastSurpriseId }.ifEmpty { allPresets }
+        val picked = pool[Random.nextInt(pool.size)]
+        lastSurpriseId = picked.id
+        // Intensity still applies: the slider is the user's, the look is the dice's.
+        return picked.scaledBy(intensity).let { scaled ->
+            when (aspect) {
+                AspectChoice.AUTO -> scaled
+                AspectChoice.FULL -> scaled.copy(aspect = null)
+                else -> scaled.copy(aspect = aspect.ratio)
+            }
+        }
+    }
 
     /** Counts down on screen, then fires the shutter. */
     private fun startCountdown(remaining: Int) {
@@ -586,85 +572,6 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getMainExecutor(this)
         )
         showFocusRing(viewX, viewY)
-    }
-
-    // --- face detection ----------------------------------------------------
-
-    /**
-     * The camera's own face detector, read out of the capture metadata. The ISP already computes
-     * this for autofocus, so taking the result costs nothing per frame — running a detection model
-     * over every preview frame instead would be the single most expensive thing in the app.
-     */
-    private val faceCaptureCallback = object : CameraCaptureSession.CaptureCallback() {
-        override fun onCaptureCompleted(
-            session: CameraCaptureSession,
-            request: CaptureRequest,
-            result: TotalCaptureResult
-        ) {
-            val geometry = previewGeometry ?: return
-            val faces = result.get(CaptureResult.STATISTICS_FACES)
-            if (faces == null || faces.isEmpty()) {
-                binding.faceOverlay.post { binding.faceOverlay.setFaces(emptyList()) }
-                return
-            }
-
-            // Face bounds are in active-array coordinates; the crop region is what the preview is
-            // actually showing, so normalising against it is what keeps boxes aligned while zoomed.
-            val region = result.get(CaptureResult.SCALER_CROP_REGION) ?: sensorActiveArray ?: return
-            if (region.width() <= 0 || region.height() <= 0) return
-
-            val boxes = faces.mapNotNull { face ->
-                val bounds = face.bounds
-                val a = sensorToView(
-                    (bounds.left - region.left) / region.width().toFloat(),
-                    (bounds.top - region.top) / region.height().toFloat(),
-                    geometry
-                )
-                val b = sensorToView(
-                    (bounds.right - region.left) / region.width().toFloat(),
-                    (bounds.bottom - region.top) / region.height().toFloat(),
-                    geometry
-                )
-                // Rotation can swap which corner is which, so normalise rather than assume.
-                RectF(minOf(a.x, b.x), minOf(a.y, b.y), maxOf(a.x, b.x), maxOf(a.y, b.y))
-                    .takeIf { it.width() > 1f && it.height() > 1f }
-            }
-            // Logged only when the count changes: enough to confirm detection and box placement
-            // without a per-frame flood.
-            if (boxes.size != lastFaceCount) {
-                lastFaceCount = boxes.size
-                Log.i(TAG, "faces=${boxes.size} ${boxes.firstOrNull()?.let {
-                    "first=[%.0f,%.0f,%.0f,%.0f] view=%dx%d".format(
-                        it.left, it.top, it.right, it.bottom,
-                        binding.faceOverlay.width, binding.faceOverlay.height
-                    )
-                } ?: ""}")
-            }
-            binding.faceOverlay.post { binding.faceOverlay.setFaces(boxes) }
-        }
-    }
-
-    private var lastFaceCount = -1
-
-    /**
-     * Sensor-normalised point to a view coordinate: the exact inverse of what [focusAt] does,
-     * walking the transform chain forwards instead of backwards.
-     */
-    private fun sensorToView(bu: Float, bv: Float, g: PreviewGeometry): PointF {
-        val u: Float
-        val v: Float
-        when (g.rotationDegrees) {
-            90 -> { u = 1f - bv; v = bu }
-            180 -> { u = 1f - bu; v = 1f - bv }
-            270 -> { u = bv; v = 1f - bu }
-            else -> { u = bu; v = bv }
-        }
-        val croppedX = u * g.frameWidth - g.layout.cropLeft
-        val croppedY = v * g.frameHeight - g.layout.cropTop
-        return PointF(
-            (croppedX + g.layout.borderLeft) * g.scale + g.destLeft,
-            (croppedY + g.layout.borderTop) * g.scale + g.destTop
-        )
     }
 
     private fun showFocusRing(viewX: Float, viewY: Float) {
@@ -876,7 +783,9 @@ class MainActivity : AppCompatActivity() {
         binding.shutterButton.isEnabled = true
 
         val capture = imageCapture ?: return
-        val preset = activePreset ?: return
+        // Rolled once here, then carried all the way through to saving, so the toast and the
+        // filename always name the filter the photo was actually developed with.
+        val preset = (if (surpriseMode) rollRandomPreset() else activePreset) ?: return
         setStatus(R.string.status_saving)
 
         capture.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
@@ -896,7 +805,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 val composed = OverlayCompositor.compose(filtered, preset, Date())
-                saveToGallery(composed, preset)
+                saveToGallery(composed, preset, revealName = surpriseMode)
                 if (composed !== filtered) filtered.recycle()
             }
 
@@ -907,7 +816,7 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    private fun saveToGallery(bitmap: Bitmap, preset: FilterPreset) {
+    private fun saveToGallery(bitmap: Bitmap, preset: FilterPreset, revealName: Boolean = false) {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
         val contentValues = ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME, "RetroCam_${preset.id}_$stamp")
@@ -926,8 +835,11 @@ class MainActivity : AppCompatActivity() {
         }
 
         runOnUiThread {
-            Toast.makeText(this, R.string.saved_toast, Toast.LENGTH_SHORT).show()
-            setStatus(R.string.status_ready)
+            // Name the roll. A surprise you can identify is worth keeping; an unexplained one just
+            // looks like the app ignored the filter you picked.
+            if (revealName) toast(getString(R.string.surprise_result, preset.name))
+            else Toast.makeText(this, R.string.saved_toast, Toast.LENGTH_SHORT).show()
+            setStatus(if (surpriseMode) R.string.surprise_status else R.string.status_ready)
         }
     }
 

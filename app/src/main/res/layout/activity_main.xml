@@ -13,17 +13,12 @@
         android:contentDescription="@string/viewfinder"
         android:focusable="true" />
 
-    <!-- Composition aids and tracking boxes: interface only, never drawn into a capture. -->
+    <!-- Composition aid: interface only, never drawn into a capture. -->
     <com.retrocam.app.ui.GridOverlayView
         android:id="@+id/gridOverlay"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:visibility="gone" />
-
-    <com.retrocam.app.ui.FaceOverlayView
-        android:id="@+id/faceOverlay"
-        android:layout_width="match_parent"
-        android:layout_height="match_parent" />
 
     <LinearLayout
         android:id="@+id/topBar"
@@ -63,6 +58,12 @@
             style="@style/TopBarButton"
             android:contentDescription="@string/compare_title"
             android:src="@drawable/ic_compare" />
+
+        <ImageButton
+            android:id="@+id/surpriseButton"
+            style="@style/TopBarButton"
+            android:contentDescription="@string/surprise"
+            android:src="@drawable/ic_shuffle" />
     </LinearLayout>
 
     <TextView

@@ -1,12 +1,14 @@
-"""Round-trips the two coordinate mappings in MainActivity against each other.
+"""Validates MainActivity.focusAt() by round-tripping it against its inverse.
 
-`focusAt` turns a screen tap into a sensor coordinate; `sensorToView` turns a sensor coordinate
-(a face rectangle corner) back into a screen position. They walk the same chain — letterbox,
-frame border, aspect crop, buffer rotation — in opposite directions, so composing them must be
-the identity. If they ever drift apart, focus aims at the wrong subject and face boxes sit off
-the faces, both of which are hard to spot in code review.
+focusAt turns a screen tap into a sensor coordinate, walking back through letterbox, frame
+border, aspect crop and buffer rotation. Getting any step wrong aims focus at the wrong part of
+the scene — invisible in code review, obvious in a blurry photo.
 
-Mirrors the Kotlin exactly; run it after touching either function.
+sensor_to_view below is the forward mapping. It used to exist in the app too, for drawing face
+detection boxes; that feature has been removed, so it lives on here purely as a test fixture,
+derived independently so that composing the two is a real check rather than a tautology.
+
+Mirrors the Kotlin exactly; run it after touching focusAt.
 """
 
 import sys
@@ -131,7 +133,7 @@ def main():
 
     assert worst < 0.01, f"mappings disagree by {worst}px"
     assert on_border is None
-    print("\nOK: focus and face mappings are exact inverses.")
+    print("\nOK: focusAt round-trips exactly through its inverse.")
 
 
 if __name__ == "__main__":
