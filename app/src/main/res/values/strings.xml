@@ -24,4 +24,8 @@
     <string name="timer_toast">Self-timer: %1$s</string>
     <string name="aspect_toast">Aspect: %1$s</string>
     <string name="timer_off">off</string>
+    <string name="compare_title">Compare cameras</string>
+    <string name="compare_hint">The same frame through every camera. Tap one to apply it.</string>
+    <string name="compare_empty">Point the camera at something first, then try again.</string>
+    <string name="compare_waiting">Hold still…</string>
 </resources>

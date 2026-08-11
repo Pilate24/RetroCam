@@ -7,14 +7,21 @@ package com.retrocam.app.filter
  * Stages, in order:
  *  1. sample distortion  — VHS tracking, sync-bar displacement
  *  2. sampling           — radial chromatic aberration / directional RGB split / anaglyph
- *  3. optics             — defocus blur, then unsharp for sharpness & clarity
- *  4. tone               — exposure, brightness, contrast, highlights, shadows, fade
- *  5. colour             — temperature, tint, saturation, then the optional LUT
- *  6. bleed              — chroma smear, the analogue "colour running" look
- *  7. light              — halation, glow, light leak, film burn, flash hotspot
- *  8. video artefacts    — scanlines, sync-bar glow, digital noise
- *  9. film artefacts     — grain, dust, scratches
- * 10. vignette
+ *  3. optics             — motion and defocus blur, before any grading
+ *  4. exposure / WB      — exposure, brightness, temperature, tint
+ *  5. tone curve         — contrast, shadow toe, highlight roll-off, whites, blacks
+ *  6. colour rendering   — saturation, then the optional LUT
+ *  7. RGB / HSL          — per-channel gamma, hue-band saturation & shift, split toning
+ *  8. highlight & shadow — recovery, fade
+ *  9. micro contrast     — clarity, micro-contrast, then sharpening
+ * 10. bleed              — chroma smear, the analogue "colour running" look
+ * 11. light              — halation, glow, light leak, film burn, flash hotspot
+ * 12. video artefacts    — scanlines, sync-bar glow, digital noise
+ * 13. film artefacts     — grain, dust, scratches
+ * 14. vignette
+ *
+ * Sharpening deliberately comes *after* grading rather than at sample time: sharpening the graded
+ * image is what a camera actually does, and doing it first bakes haloes into everything downstream.
  *
  * Every expensive stage sits behind a `if (amount > 0.0)` guard. The branches are uniform-valued,
  * so all pixels take the same path and the GPU stays coherent — a filter that doesn't use dust
@@ -43,7 +50,34 @@ object FilterShader {
         uniform float tint;
         uniform float highlights;
         uniform float shadows;
+        uniform float whites;
+        uniform float blacks;
         uniform float fade;
+
+        // Tone curve shape. These are what separate one camera's rendering from another far more
+        // than any colour shift does.
+        uniform float toneShoulder;   // filmic highlight roll-off
+        uniform float toneToe;        // shadow response: >0 deepens, <0 lifts
+
+        // Per-channel gamma — the crux of "colour science". Fuji's greens and Canon's reds are
+        // channel response curves, not a global temperature nudge.
+        uniform float3 channelGamma;
+
+        // Split toning
+        uniform float3 shadowTint;
+        uniform float shadowTintAmount;
+        uniform float3 highlightTint;
+        uniform float highlightTintAmount;
+
+        // Targeted HSL on the three bands that carry camera character: skin, foliage, sky.
+        uniform float skinSat;
+        uniform float skinShift;
+        uniform float greenSat;
+        uniform float greenShift;
+        uniform float blueSat;
+        uniform float blueShift;
+
+        uniform float microContrast;
 
         // Optics
         uniform float blurAmount;
@@ -136,6 +170,26 @@ object FilterShader {
             return mix(s0, s1, blue - b0);
         }
 
+        float3 rgb2hsv(float3 c) {
+            float4 K = float4(0.0, -1.0 / 3.0, 2.0 / 3.0, -1.0);
+            float4 p = mix(float4(c.bg, K.wz), float4(c.gb, K.xy), step(c.b, c.g));
+            float4 q = mix(float4(p.xyw, c.r), float4(c.r, p.yzx), step(p.x, c.r));
+            float d = q.x - min(q.w, q.y);
+            return float3(abs(q.z + (q.w - q.y) / (6.0 * d + 1e-10)), d / (q.x + 1e-10), q.x);
+        }
+
+        float3 hsv2rgb(float3 c) {
+            float4 K = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+            float3 p = abs(fract(c.xxx + K.xyz) * 6.0 - K.www);
+            return c.z * mix(K.xxx, clamp(p - K.xxx, 0.0, 1.0), c.y);
+        }
+
+        /** Soft window around a hue, wrapping across the 0/1 seam. */
+        float hueBand(float h, float centre, float width) {
+            float d = abs(fract(h - centre + 0.5) - 0.5);
+            return 1.0 - smoothstep(0.0, width, d);
+        }
+
         float3 brightPass(float3 c, float threshold) {
             float l = dot(c, LUMA);
             return c * (max(l - threshold, 0.0) / max(1.0 - threshold, 0.001));
@@ -214,7 +268,7 @@ object FilterShader {
                 color = sampleInput(sampleCoord);
             }
 
-            // --- 3. optics: defocus, then unsharp for sharpness and clarity ---------------
+            // --- 3. optics: lens defocus, before any grading ------------------------------
             if (motionBlur > 0.0) {
                 // Smear along one axis. A symmetric blur here would read as defocus, not movement.
                 float2 dir = float2(cos(motionAngle), sin(motionAngle)) * motionBlur * shortSide * 0.01;
@@ -230,21 +284,71 @@ object FilterShader {
             if (blurAmount > 0.0) {
                 color = mix(color, blurAt(sampleCoord, blurAmount * shortSide * 0.01), 0.85);
             }
-            if (sharpness > 0.0) {
-                float3 soft = blurAt(sampleCoord, shortSide * 0.0018);
-                color += (color - soft) * sharpness * 2.0;
-            }
-            if (clarity != 0.0) {
-                // Local contrast: unsharp at a much wider radius than sharpness uses.
-                float3 wide = blurAt(sampleCoord, shortSide * 0.02);
-                color += (color - wide) * clarity;
-            }
 
-            // --- 4. tone ------------------------------------------------------------------
+            // --- 4. exposure and white balance --------------------------------------------
             if (exposure != 0.0) color *= pow(2.0, exposure);
             if (brightness != 0.0) color += brightness;
-            if (contrast != 0.0) color = (color - float3(0.5)) * (1.0 + contrast) + float3(0.5);
+            if (temperature != 0.0) {
+                color.r += temperature * 0.18;
+                color.b -= temperature * 0.18;
+            }
+            if (tint != 0.0) {
+                color.g += tint * 0.14;
+                color.r -= tint * 0.05;
+                color.b -= tint * 0.05;
+            }
 
+            // --- 5. tone curve -------------------------------------------------------------
+            if (contrast != 0.0) color = (color - float3(0.5)) * (1.0 + contrast) + float3(0.5);
+            if (toneToe != 0.0) {
+                // Shadow response. Positive deepens the toe, negative lifts it.
+                color = pow(max(color, float3(0.0)), float3(1.0 + toneToe));
+            }
+            if (toneShoulder > 0.0) {
+                // Filmic highlight roll-off: an exponential shoulder, so highlights compress
+                // toward white instead of clipping flat. This is most of what "cinematic" means.
+                color = mix(color, float3(1.0) - exp(-color * 1.6), toneShoulder);
+            }
+            if (whites != 0.0 || blacks != 0.0) {
+                float l = dot(clamp(color, float3(0.0), float3(1.0)), LUMA);
+                color *= 1.0 + whites * smoothstep(0.65, 1.0, l);
+                color += blacks * (1.0 - smoothstep(0.0, 0.28, l));
+            }
+
+            // --- 6. colour rendering -------------------------------------------------------
+            if (saturation != 0.0) {
+                float l = dot(color, LUMA);
+                color = mix(float3(l), color, 1.0 + saturation);
+            }
+            if (lutIntensity > 0.0) {
+                color = mix(color, sampleLut(color), lutIntensity);
+            }
+
+            // --- 7. RGB channel response and targeted HSL ----------------------------------
+            if (channelGamma.r != 1.0 || channelGamma.g != 1.0 || channelGamma.b != 1.0) {
+                color = pow(clamp(color, float3(0.0), float3(1.0)), channelGamma);
+            }
+            if (skinSat != 0.0 || greenSat != 0.0 || blueSat != 0.0 ||
+                skinShift != 0.0 || greenShift != 0.0 || blueShift != 0.0) {
+                float3 hsv = rgb2hsv(clamp(color, float3(0.0), float3(1.0)));
+                float skin = hueBand(hsv.x, 0.06, 0.10);
+                float green = hueBand(hsv.x, 0.33, 0.14);
+                float blue = hueBand(hsv.x, 0.60, 0.13);
+                hsv.y = clamp(
+                    hsv.y * (1.0 + skinSat * skin + greenSat * green + blueSat * blue), 0.0, 1.0
+                );
+                hsv.x = fract(
+                    hsv.x + skinShift * skin + greenShift * green + blueShift * blue
+                );
+                color = hsv2rgb(hsv);
+            }
+            if (shadowTintAmount > 0.0 || highlightTintAmount > 0.0) {
+                float l = dot(clamp(color, float3(0.0), float3(1.0)), LUMA);
+                color += shadowTint * shadowTintAmount * (1.0 - smoothstep(0.0, 0.55, l));
+                color += highlightTint * highlightTintAmount * smoothstep(0.45, 1.0, l);
+            }
+
+            // --- 8. highlight and shadow processing ----------------------------------------
             if (highlights != 0.0 || shadows != 0.0) {
                 float l = dot(clamp(color, float3(0.0), float3(1.0)), LUMA);
                 color += highlights * smoothstep(0.5, 1.0, l);
@@ -255,25 +359,23 @@ object FilterShader {
                 color = mix(color, color * (1.0 - fade * 0.45) + float3(fade * 0.22), 1.0);
             }
 
-            // --- 5. colour ----------------------------------------------------------------
-            if (temperature != 0.0) {
-                color.r += temperature * 0.18;
-                color.b -= temperature * 0.18;
+            // --- 9. micro contrast, then sharpening ----------------------------------------
+            if (clarity != 0.0) {
+                float3 wide = blurAt(sampleCoord, shortSide * 0.02);
+                color += (color - wide) * clarity;
             }
-            if (tint != 0.0) {
-                color.g += tint * 0.14;
-                color.r -= tint * 0.05;
-                color.b -= tint * 0.05;
+            if (microContrast != 0.0) {
+                // Narrower radius than clarity: the crisp "bite" that separates a Ricoh or Leica
+                // rendering from a soft one, without clarity's halo around large edges.
+                float3 near = blurAt(sampleCoord, shortSide * 0.006);
+                color += (color - near) * microContrast;
             }
-            if (saturation != 0.0) {
-                float l = dot(color, LUMA);
-                color = mix(float3(l), color, 1.0 + saturation);
-            }
-            if (lutIntensity > 0.0) {
-                color = mix(color, sampleLut(color), lutIntensity);
+            if (sharpness > 0.0) {
+                float3 soft = blurAt(sampleCoord, shortSide * 0.0018);
+                color += (color - soft) * sharpness * 2.0;
             }
 
-            // --- 6. colour bleed ----------------------------------------------------------
+            // --- 10. colour bleed ----------------------------------------------------------
             if (colorBleed > 0.0) {
                 // Smear chroma sideways while keeping luma sharp — how composite video looks.
                 float3 smeared = blurAt(sampleCoord, colorBleed * shortSide * 0.012);
@@ -282,7 +384,7 @@ object FilterShader {
                 color = float3(l) + mix(color - float3(l), smearedChroma, colorBleed);
             }
 
-            // --- 7. light -----------------------------------------------------------------
+            // --- 11. light -----------------------------------------------------------------
             if (halationAmount > 0.0) {
                 float3 bloom = brightPass(
                     blurAt(fragCoord, halationRadius * shortSide * 0.01), halationThreshold
@@ -310,7 +412,7 @@ object FilterShader {
                 color += pow(hot, max(flashHardness, 0.001)) * flashAmount;
             }
 
-            // --- 8. video artefacts -------------------------------------------------------
+            // --- 12. video artefacts -------------------------------------------------------
             if (scanlineAmount > 0.0) {
                 float line = 0.5 + 0.5 * cos(uv.y * scanlineCount * TWO_PI);
                 color *= 1.0 - scanlineAmount * (1.0 - line);
@@ -328,7 +430,7 @@ object FilterShader {
                 color += n * noiseAmount;
             }
 
-            // --- 9. film artefacts --------------------------------------------------------
+            // --- 13. film artefacts --------------------------------------------------------
             if (grainAmount > 0.0) {
                 float scale = 1300.0 / max(grainSize, 0.05);
                 float2 grainCoord = float2(uv.x * aspect, uv.y) * scale
@@ -349,7 +451,7 @@ object FilterShader {
                 color += scratchAt(uv, scratchAmount) * 0.7;
             }
 
-            // --- 10. vignette --------------------------------------------------------------
+            // --- 14. vignette --------------------------------------------------------------
             if (vignetteAmount > 0.0) {
                 float2 v = centered * float2(aspect, 1.0);
                 color *= clamp(1.0 - vignetteAmount * dot(v, v) * 2.0, 0.0, 1.0);

@@ -1,6 +1,7 @@
 package com.retrocam.app
 
 import android.Manifest
+import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
 import android.content.pm.PackageManager
@@ -54,6 +55,8 @@ import com.retrocam.app.filter.PresetRepository
 import com.retrocam.app.filter.ShaderRenderer
 import com.retrocam.app.gallery.GalleryActivity
 import com.retrocam.app.ui.CategoryAdapter
+import com.retrocam.app.ui.CompareActivity
+import com.retrocam.app.ui.CompareFrame
 import com.retrocam.app.ui.FilterCarouselAdapter
 import com.retrocam.app.ui.ThumbnailCache
 import java.text.SimpleDateFormat
@@ -106,6 +109,7 @@ class MainActivity : AppCompatActivity() {
 
     private var framesSinceReport = 0
     private var fpsWindowStartNanos = 0L
+    private var lastCompareFrameNanos = 0L
 
     private var flash = FlashChoice.OFF
     private var timerSeconds = 0
@@ -405,6 +409,41 @@ class MainActivity : AppCompatActivity() {
             binding.gridButton.alpha = if (showing) 0.65f else 1f
         }
         binding.gridButton.alpha = 0.65f
+
+        binding.compareButton.setOnClickListener {
+            val frame = latestFrame
+            if (frame == null) {
+                toast(getString(R.string.compare_waiting))
+                return@setOnClickListener
+            }
+            CompareFrame.set(frame)
+            latestFrame = null   // ownership moves to CompareFrame
+            compareLauncher.launch(Intent(this, CompareActivity::class.java))
+        }
+    }
+
+    /**
+     * A copy of the most recent preview frame, kept so Compare can freeze one instant and grade
+     * every camera against it. Comparing against a live preview would show each tile a different
+     * moment, and the scene change would swamp the difference between renderings.
+     */
+    @Volatile
+    private var latestFrame: Bitmap? = null
+
+    private val compareLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val id = result.data?.getStringExtra(CompareActivity.EXTRA_PRESET_ID)
+            if (result.resultCode == Activity.RESULT_OK && id != null) applyPresetById(id)
+            CompareFrame.clear()
+        }
+
+    /** Applies a preset chosen elsewhere, widening the category filter so it is actually visible. */
+    private fun applyPresetById(id: String) {
+        if (allPresets.none { it.id == id }) return
+        selectedPresetId = id
+        showCategory(PresetRepository.CATEGORY_ALL)
+        (binding.categoryTabs.adapter as? CategoryAdapter)?.selectedPosition = 0
+        refreshActivePreset()
     }
 
     private fun toast(message: String) =
@@ -700,6 +739,20 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { carouselAdapter?.refreshThumbnails() }
         }
 
+        // Keep one recent frame for Compare. Downscaled here so the copy is cheap and the compare
+        // grid isn't re-scaling a full preview frame per tile.
+        if (now - lastCompareFrameNanos > COMPARE_FRAME_NANOS) {
+            lastCompareFrameNanos = now
+            val previous = latestFrame
+            latestFrame = Bitmap.createScaledBitmap(
+                rotated, COMPARE_FRAME_WIDTH,
+                (COMPARE_FRAME_WIDTH * rotated.height / rotated.width.toFloat()).toInt()
+                    .coerceAtLeast(1),
+                true
+            )
+            previous?.recycle()
+        }
+
         val elapsedSeconds = (now - startTimeNanos) / 1_000_000_000f
         // A frame that fails to render is dropped: the preview stutters, but the app stays alive.
         val filtered = try {
@@ -893,5 +946,7 @@ class MainActivity : AppCompatActivity() {
         private const val FOCUS_HOLD_SECONDS = 4L
         private const val THUMBNAIL_REFRESH_NANOS = 20_000_000_000L
         private const val FPS_REPORT_NANOS = 3_000_000_000L
+        private const val COMPARE_FRAME_NANOS = 1_000_000_000L
+        private const val COMPARE_FRAME_WIDTH = 480
     }
 }

@@ -57,6 +57,12 @@
             style="@style/TopBarButton"
             android:contentDescription="@string/grid"
             android:src="@drawable/ic_grid" />
+
+        <ImageButton
+            android:id="@+id/compareButton"
+            style="@style/TopBarButton"
+            android:contentDescription="@string/compare_title"
+            android:src="@drawable/ic_compare" />
     </LinearLayout>
 
     <TextView

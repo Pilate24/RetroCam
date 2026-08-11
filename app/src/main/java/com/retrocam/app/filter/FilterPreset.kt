@@ -64,7 +64,24 @@ data class ShaderParams(
     val tint: Float = 0f,
     val highlights: Float = 0f,
     val shadows: Float = 0f,
+    val whites: Float = 0f,
+    val blacks: Float = 0f,
     val fade: Float = 0f,
+
+    val toneShoulder: Float = 0f,
+    val toneToe: Float = 0f,
+    val channelGamma: FloatArray = floatArrayOf(1f, 1f, 1f),
+    val shadowTint: FloatArray = floatArrayOf(0f, 0f, 0f),
+    val shadowTintAmount: Float = 0f,
+    val highlightTint: FloatArray = floatArrayOf(0f, 0f, 0f),
+    val highlightTintAmount: Float = 0f,
+    val skinSat: Float = 0f,
+    val skinShift: Float = 0f,
+    val greenSat: Float = 0f,
+    val greenShift: Float = 0f,
+    val blueSat: Float = 0f,
+    val blueShift: Float = 0f,
+    val microContrast: Float = 0f,
 
     val blurAmount: Float = 0f,
     val motionBlur: Float = 0f,
@@ -114,7 +131,22 @@ data class ShaderParams(
         tint = tint * a,
         highlights = highlights * a,
         shadows = shadows * a,
+        whites = whites * a,
+        blacks = blacks * a,
         fade = fade * a,
+        toneShoulder = toneShoulder * a,
+        toneToe = toneToe * a,
+        // Gamma is multiplicative around 1.0, so it interpolates toward 1.0 rather than toward 0.
+        channelGamma = FloatArray(3) { 1f + (channelGamma[it] - 1f) * a },
+        shadowTintAmount = shadowTintAmount * a,
+        highlightTintAmount = highlightTintAmount * a,
+        skinSat = skinSat * a,
+        skinShift = skinShift * a,
+        greenSat = greenSat * a,
+        greenShift = greenShift * a,
+        blueSat = blueSat * a,
+        blueShift = blueShift * a,
+        microContrast = microContrast * a,
         blurAmount = blurAmount * a,
         motionBlur = motionBlur * a,
         sharpness = sharpness * a,
@@ -237,7 +269,8 @@ object PresetRepository {
 
     /** Category tabs, in display order, derived from what actually loaded. */
     fun categoriesOf(presets: List<FilterPreset>): List<String> {
-        val order = listOf("Film", "Vintage", "80s/90s", "Disposable", "B&W", "VHS", "Effects")
+        val order =
+            listOf("Camera", "Film", "Vintage", "80s/90s", "Disposable", "B&W", "VHS", "Effects")
         val present = presets.map { it.category }.toSet()
         return listOf(CATEGORY_ALL) + order.filter { it in present } +
             present.filter { it !in order }.sorted()
@@ -279,7 +312,30 @@ object PresetRepository {
         tint = scaled("tint", 1f),
         highlights = scaled("highlights", 0.3f),
         shadows = scaled("shadows", 0.3f),
+        whites = scaled("whites", 0.35f),
+        blacks = scaled("blacks", 0.25f),
         fade = scaled("fade", 1f),
+
+        toneShoulder = scaled("highlightRolloff", 1f),
+        toneToe = scaled("shadowResponse", 0.6f),
+        // Authored as -100..100 around neutral; 100 maps to gamma 0.6 (lifts that channel), -100
+        // to 1.6 (deepens it). Inverted because lower gamma means a brighter channel.
+        channelGamma = floatArrayOf(
+            gammaFor("redResponse"), gammaFor("greenResponse"), gammaFor("blueResponse")
+        ),
+        shadowTint = optString("shadowTint").takeIf { it.isNotEmpty() }?.toRgb()
+            ?: floatArrayOf(0f, 0f, 0f),
+        shadowTintAmount = scaled("shadowTintAmount", 0.35f),
+        highlightTint = optString("highlightTint").takeIf { it.isNotEmpty() }?.toRgb()
+            ?: floatArrayOf(0f, 0f, 0f),
+        highlightTintAmount = scaled("highlightTintAmount", 0.35f),
+        skinSat = scaled("skinSaturation", 1f),
+        skinShift = scaled("skinHue", 0.06f),
+        greenSat = scaled("greenSaturation", 1f),
+        greenShift = scaled("greenHue", 0.06f),
+        blueSat = scaled("blueSaturation", 1f),
+        blueShift = scaled("blueHue", 0.06f),
+        microContrast = scaled("microContrast", 0.6f),
 
         blurAmount = scaled("blur", 2f),
         motionBlur = scaled("motionBlur", 2.5f),
@@ -324,6 +380,9 @@ object PresetRepository {
 
     private fun JSONObject.scaled(key: String, fullScale: Float): Float =
         optFloat(key, 0f) / 100f * fullScale
+
+    private fun JSONObject.gammaFor(key: String): Float =
+        1f - optFloat(key, 0f) / 100f * 0.4f
 
     private fun JSONObject.toFrame() = Frame(
         color = Color.parseColor(optString("color", "#FFFFFFFF")),

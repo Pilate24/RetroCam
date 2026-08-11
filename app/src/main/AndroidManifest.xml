@@ -28,5 +28,10 @@
             android:name=".gallery.ViewerActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
+
+        <activity
+            android:name=".ui.CompareActivity"
+            android:exported="false"
+            android:screenOrientation="portrait" />
     </application>
 </manifest>
