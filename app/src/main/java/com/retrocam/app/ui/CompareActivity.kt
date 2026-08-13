@@ -10,8 +10,8 @@ import com.retrocam.app.databinding.ActivityCompareBinding
 import com.retrocam.app.filter.PresetRepository
 
 /**
- * Shows one frozen frame graded through every camera preset at once, so the differences can be
- * judged side by side rather than by cycling the carousel and trying to remember.
+ * Shows one frozen frame graded through every look at once, so the differences can be judged side
+ * by side rather than by cycling the carousel and trying to remember.
  *
  * The frame is frozen deliberately: comparing looks against a live preview would mean each tile
  * showed a different moment, and the scene change would swamp the difference between renderings.
@@ -30,9 +30,11 @@ class CompareActivity : AppCompatActivity() {
 
         val frame = CompareFrame.get()
         val presets = PresetRepository.load(assets)
-        // Original first as the reference, then every camera.
+        // Original first as the reference, then every other look. This used to be scoped to the
+        // camera-emulation presets; with those gone it covers the whole set, which is what the
+        // screen was useful for anyway.
         val ordered = presets.filter { it.id == "original" } +
-            presets.filter { it.category == "Camera" }
+            presets.filter { it.id != "original" }
 
         if (frame == null || ordered.isEmpty()) {
             binding.emptyState.visibility = View.VISIBLE

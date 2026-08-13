@@ -1,6 +1,6 @@
 """Guards the simulation against drifting from the shader.
 
-verify_camera_presets.py replicates the shader's maths in Python. When the two disagree, every
+verify_presets.py replicates the shader's maths in Python. When the two disagree, every
 measurement it produces is fiction — and that has already happened once: the shader was lifting
 blacks by 0.60/0.30 while the simulation modelled 0.72/0.38, so presets were diagnosed against
 code that did not exist.
@@ -12,7 +12,7 @@ import sys
 
 SHADER = "app/src/main/java/com/retrocam/app/filter/FilterShader.kt"
 LOADER = "app/src/main/java/com/retrocam/app/filter/FilterPreset.kt"
-SIM = "tools/verify_camera_presets.py"
+SIM = "tools/verify_presets.py"
 
 shader = open(SHADER, encoding="utf-8").read()
 loader = open(LOADER, encoding="utf-8").read()

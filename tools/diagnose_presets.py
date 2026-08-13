@@ -1,19 +1,19 @@
 """Diagnoses *quality* problems in presets, not just difference from the original.
 
-verify_camera_presets.py answers "is this filter distinguishable" — which a washed-out or garish
+verify_presets.py answers "is this filter distinguishable" — which a washed-out or garish
 filter passes easily. This answers the questions someone actually judges a photo by:
 
   midtone    does 50% grey stay near 50%, or does the look go muddy / blown?
   contrast   the gap between 20% and 80% grey. Below the original's 0.6 the image reads flat.
   saturation mean chroma across real-world patches. Far above the original reads garish.
 
-Reuses the shader replication in verify_camera_presets.py so both tools describe the same maths.
+Reuses the shader replication in verify_presets.py so both tools describe the same maths.
 """
 
 import json
 import sys
 
-from verify_camera_presets import REFERENCE, LUMA, apply
+from verify_presets import REFERENCE, LUMA, apply
 
 ORIGINAL_CONTRAST = 0.60   # neutral 80% minus neutral 20%
 ORIGINAL_SATURATION = 0.324
@@ -41,8 +41,7 @@ def measure(preset):
 
 
 def main():
-    presets = [p for p in json.load(open(sys.argv[1], encoding="utf-8"))
-               if p.get("category") == "Camera"]
+    presets = json.load(open(sys.argv[1], encoding="utf-8"))
     rows = [(p["name"], measure(p)) for p in presets]
 
     flat = sorted(rows, key=lambda r: r[1]["contrast"])[:8]

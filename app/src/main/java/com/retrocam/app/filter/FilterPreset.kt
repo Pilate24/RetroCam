@@ -270,7 +270,7 @@ object PresetRepository {
     /** Category tabs, in display order, derived from what actually loaded. */
     fun categoriesOf(presets: List<FilterPreset>): List<String> {
         val order =
-            listOf("Camera", "Film", "Vintage", "80s/90s", "Disposable", "B&W", "VHS", "Effects")
+            listOf("Film", "Vintage", "80s/90s", "Disposable", "B&W", "VHS", "Effects")
         val present = presets.map { it.category }.toSet()
         return listOf(CATEGORY_ALL) + order.filter { it in present } +
             present.filter { it !in order }.sorted()

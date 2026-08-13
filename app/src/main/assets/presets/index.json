@@ -7,7 +7,6 @@
     "vhs"
   ],
   "packs": [
-    "presets/camera_pack.json",
     "presets/retro_pack.json"
   ]
 }
