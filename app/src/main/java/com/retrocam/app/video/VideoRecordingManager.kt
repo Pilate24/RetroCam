@@ -75,9 +75,9 @@ class VideoRecordingManager(
         val tempFile = File(videoDir, "staging_$currentDisplayName")
         currentTempFile = tempFile
 
-        // Even dimensions required for H.264
-        val encWidth = (rawWidth / 2) * 2
-        val encHeight = (rawHeight / 2) * 2
+        // Divisible by 4 and safe minimum for universal H.264 hardware encoder support
+        val encWidth = ((rawWidth / 4) * 4).coerceAtLeast(320)
+        val encHeight = ((rawHeight / 4) * 4).coerceAtLeast(320)
 
         onStateChanged(RecordingState.Starting(audioEnabledForCurrent))
 

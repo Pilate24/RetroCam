@@ -369,6 +369,8 @@ class MainActivity : AppCompatActivity() {
                 binding.modeSelector.alpha = 1f
                 binding.flipCameraButton.isEnabled = true
                 binding.flipCameraButton.alpha = 1f
+                binding.aspectButton.isEnabled = true
+                binding.aspectButton.alpha = 1f
                 binding.filterCarousel.isEnabled = true
                 binding.filterCarousel.alpha = 1f
                 binding.categoryTabs.isEnabled = true
@@ -393,6 +395,8 @@ class MainActivity : AppCompatActivity() {
                 binding.modeSelector.alpha = 0.4f
                 binding.flipCameraButton.isEnabled = false
                 binding.flipCameraButton.alpha = 0.4f
+                binding.aspectButton.isEnabled = false
+                binding.aspectButton.alpha = 0.4f
                 binding.filterCarousel.isEnabled = false
                 binding.filterCarousel.alpha = 0.4f
                 binding.categoryTabs.isEnabled = false
@@ -417,6 +421,8 @@ class MainActivity : AppCompatActivity() {
                 binding.modeSelector.alpha = 0.4f
                 binding.flipCameraButton.isEnabled = false
                 binding.flipCameraButton.alpha = 0.4f
+                binding.aspectButton.isEnabled = false
+                binding.aspectButton.alpha = 0.4f
                 binding.filterCarousel.isEnabled = false
                 binding.filterCarousel.alpha = 0.4f
                 binding.categoryTabs.isEnabled = false
@@ -737,12 +743,13 @@ class MainActivity : AppCompatActivity() {
 
     private enum class AspectChoice(val label: String, val ratio: Float?) {
         AUTO("AUTO", null),
-        FULL("FULL", null),
         PORTRAIT_3_4("3:4", 0.75f),
+        PORTRAIT_9_16("9:16", 9f / 16f),
         SQUARE("1:1", 1f),
         WIDESCREEN("16:9", 16f / 9f),
         CINEMASCOPE("2:1", 2f),
-        THREETWO("3:2", 3f / 2f)
+        THREETWO("3:2", 3f / 2f),
+        FULL("FULL", null)
     }
 
     private enum class FlashChoice(val label: String, val mode: Int, val icon: Int) {
@@ -781,19 +788,31 @@ class MainActivity : AppCompatActivity() {
         }
         binding.timerButton.alpha = 0.65f
 
-        binding.aspectButton.setOnClickListener {
-            if (cameraMode == CameraMode.VIDEO) {
-                toast("Video records in standard sensor aspect ratio")
-                return@setOnClickListener
-            }
-            aspect = AspectChoice.entries[(aspect.ordinal + 1) % AspectChoice.entries.size]
-            binding.aspectButton.text = aspect.label
-            refreshActivePreset()
-            toast(getString(R.string.aspect_toast, aspect.label))
-        }
+        binding.aspectButton.setOnClickListener { showAspectMenu(it) }
         binding.aspectButton.text = aspect.label
 
         binding.overflowButton.setOnClickListener { showOverflow(it) }
+    }
+
+    private fun showAspectMenu(anchor: View) {
+        if (videoRecordingManager.isRecording) {
+            toast("Cannot change aspect ratio while recording")
+            return
+        }
+        val popup = PopupMenu(this, anchor)
+        AspectChoice.entries.forEachIndexed { index, choice ->
+            val title = if (choice == aspect) "✓ ${choice.label}" else "    ${choice.label}"
+            popup.menu.add(0, index, index, title)
+        }
+        popup.setOnMenuItemClickListener { item ->
+            val selected = AspectChoice.entries.getOrNull(item.itemId) ?: return@setOnMenuItemClickListener false
+            aspect = selected
+            binding.aspectButton.text = aspect.label
+            refreshActivePreset()
+            toast(getString(R.string.aspect_toast, aspect.label))
+            true
+        }
+        popup.show()
     }
 
     private fun showOverflow(anchor: View) {
