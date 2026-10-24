@@ -9,6 +9,8 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import androidx.core.content.ContextCompat
+import com.retrocam.app.filter.FilterPreset
+import com.retrocam.app.filter.OverlayCompositor
 import java.io.File
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -132,6 +134,20 @@ class VideoRecordingManager(
     fun onNewFrame(bitmap: Bitmap) {
         if (isRecording && !isPaused) {
             activeRecorder?.encodeFrame(bitmap)
+        }
+    }
+
+    /**
+     * Enqueues a zero-copy hardware frame to the active video recorder.
+     */
+    fun onNewHardwareFrame(
+        bitmap: Bitmap,
+        layout: OverlayCompositor.Layout,
+        preset: FilterPreset,
+        date: Date
+    ) {
+        if (isRecording && !isPaused) {
+            activeRecorder?.encodeHardwareFrame(bitmap, layout, preset, date)
         }
     }
 

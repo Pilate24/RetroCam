@@ -15,8 +15,11 @@ import android.os.Handler
 import android.os.HandlerThread
 import android.util.Log
 import android.view.Surface
+import com.retrocam.app.filter.FilterPreset
+import com.retrocam.app.filter.OverlayCompositor
 import java.io.File
 import java.nio.ByteBuffer
+import java.util.Date
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
@@ -210,6 +213,58 @@ class FilteredVideoRecorder(
                 onDurationUpdate(durationMs)
             } catch (e: Exception) {
                 Log.w(TAG, "Failed encoding frame", e)
+            }
+        }
+    }
+
+    /**
+     * Feeds a zero-copy hardware frame directly into the video encoder surface,
+     * applying aspect cropping, borders, and date stamps directly in hardware.
+     */
+    fun encodeHardwareFrame(
+        bitmap: Bitmap,
+        layout: OverlayCompositor.Layout,
+        preset: FilterPreset,
+        date: Date
+    ) {
+        if (!isRecording.get() || isPaused.get()) return
+
+        val now = System.nanoTime()
+        val minIntervalNano = (1_000_000_000L / targetFps) - 3_000_000L
+        if (lastEncodedFrameNanoTime != 0L && (now - lastEncodedFrameNanoTime) < minIntervalNano) {
+            return
+        }
+
+        val surface = inputSurface ?: return
+
+        synchronized(frameLock) {
+            if (!isRecording.get() || isPaused.get()) return
+            try {
+                val canvas = surface.lockHardwareCanvas() ?: return
+                try {
+                    OverlayCompositor.drawToCanvas(
+                        canvas = canvas,
+                        source = bitmap,
+                        layout = layout,
+                        canvasWidth = width.toFloat(),
+                        canvasHeight = height.toFloat(),
+                        preset = preset,
+                        date = date
+                    )
+                } finally {
+                    surface.unlockCanvasAndPost(canvas)
+                }
+
+                lastEncodedFrameNanoTime = now
+                drainVideoEncoder(endOfStream = false)
+
+                // Update duration
+                val elapsedNano = now - startNanoTime - accumulatedPauseDurationNano
+                val durationMs = (elapsedNano / 1_000_000L).coerceAtLeast(0L)
+                totalRecordedDurationMs = durationMs
+                onDurationUpdate(durationMs)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed encoding hardware frame", e)
             }
         }
     }

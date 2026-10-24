@@ -61,21 +61,84 @@ class ShaderRenderer(val width: Int, val height: Int) {
     }
 
     /**
-     * Runs [preset] over [source] and returns a new software Bitmap. [source] is left untouched.
-     * [seed] drives the grain pattern — pass elapsed time to animate it in the preview, or a
-     * per-shot random value so two captures don't share identical grain.
+     * Renders [preset] over [source] directly using the GPU and provides the zero-copy [Bitmap.Config.HARDWARE]
+     * wrapped [Bitmap] to [action] without forcing a CPU readback.
      *
-     * Throws [IllegalStateException] if the GPU produced no frame; callers driving the live
-     * preview should drop the frame rather than treat that as fatal.
+     * [rotationDegrees] and [isFront] are applied directly via [BitmapShader]'s local matrix on the GPU,
+     * avoiding redundant intermediate bitmap allocations.
      */
-    fun render(source: Bitmap, seed: Float, preset: FilterPreset): Bitmap {
-        // Scale the source into the renderer's own dimensions so the shader's fragCoord space and
-        // the sampled image always line up, whatever size the caller hands us.
+    fun renderHardware(
+        source: Bitmap,
+        rotationDegrees: Int = 0,
+        isFront: Boolean = false,
+        seed: Float,
+        preset: FilterPreset,
+        action: (Bitmap) -> Unit
+    ) {
+        applyUniforms(source, rotationDegrees, isFront, seed, preset)
+
+        frameReady.drainPermits()
+
+        val surface = imageReader.surface
+        val canvas = surface.lockHardwareCanvas()
+            ?: error("ShaderRenderer could not lock a hardware canvas")
+        try {
+            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
+        } finally {
+            surface.unlockCanvasAndPost(canvas)
+        }
+
+        if (!frameReady.tryAcquire(FRAME_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
+            error("ShaderRenderer timed out waiting for a rendered frame")
+        }
+
+        val image = imageReader.acquireNextImage()
+            ?: error("ShaderRenderer produced no image")
+        try {
+            val buffer = image.hardwareBuffer
+                ?: error("Failed to acquire HardwareBuffer from image")
+            buffer.use {
+                val hardwareBitmap = Bitmap.wrapHardwareBuffer(it, null)
+                    ?: error("Failed to wrap rendered HardwareBuffer")
+                try {
+                    action(hardwareBitmap)
+                } finally {
+                    hardwareBitmap.recycle()
+                }
+            }
+        } finally {
+            image.close()
+        }
+    }
+
+    /**
+     * Runs [preset] over [source] and returns a new software Bitmap. Used for captured photos
+     * that must be compressed to JPEG and saved to disk.
+     */
+    fun render(
+        source: Bitmap,
+        seed: Float,
+        preset: FilterPreset,
+        rotationDegrees: Int = 0,
+        isFront: Boolean = false
+    ): Bitmap {
+        var result: Bitmap? = null
+        renderHardware(source, rotationDegrees, isFront, seed, preset) { hwBitmap ->
+            result = hwBitmap.copy(Bitmap.Config.ARGB_8888, false)
+        }
+        return result ?: error("ShaderRenderer failed to create software copy")
+    }
+
+    private fun applyUniforms(
+        source: Bitmap,
+        rotationDegrees: Int,
+        isFront: Boolean,
+        seed: Float,
+        preset: FilterPreset
+    ) {
         val inputShader = BitmapShader(source, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP).apply {
             filterMode = BitmapShader.FILTER_MODE_LINEAR
-            setLocalMatrix(Matrix().apply {
-                setScale(width.toFloat() / source.width, height.toFloat() / source.height)
-            })
+            setLocalMatrix(buildTransformMatrix(source.width, source.height, rotationDegrees, isFront, width, height))
         }
 
         val p = preset.shader
@@ -149,39 +212,29 @@ class ShaderRenderer(val width: Int, val height: Int) {
         shader.setFloatUniform("scratchAmount", p.scratchAmount)
         shader.setFloatUniform("vignetteAmount", p.vignetteAmount)
         paint.shader = shader
+    }
 
-        frameReady.drainPermits()
-
-        val surface = imageReader.surface
-        val canvas = surface.lockHardwareCanvas()
-            ?: error("ShaderRenderer could not lock a hardware canvas")
-        try {
-            canvas.drawRect(0f, 0f, width.toFloat(), height.toFloat(), paint)
-        } finally {
-            surface.unlockCanvasAndPost(canvas)
+    private fun buildTransformMatrix(
+        srcW: Int,
+        srcH: Int,
+        rotationDegrees: Int,
+        isFront: Boolean,
+        dstW: Int,
+        dstH: Int
+    ): Matrix {
+        val matrix = Matrix()
+        matrix.postTranslate(-srcW / 2f, -srcH / 2f)
+        if (rotationDegrees != 0) {
+            matrix.postRotate(rotationDegrees.toFloat())
         }
-
-        if (!frameReady.tryAcquire(FRAME_TIMEOUT_MS, TimeUnit.MILLISECONDS)) {
-            error("ShaderRenderer timed out waiting for a rendered frame")
+        if (isFront) {
+            matrix.postScale(-1f, 1f)
         }
-
-        val image = imageReader.acquireNextImage()
-            ?: error("ShaderRenderer produced no image")
-        try {
-            val buffer = image.hardwareBuffer
-                ?: error("Failed to acquire HardwareBuffer from image")
-            buffer.use {
-                val hardwareBitmap = Bitmap.wrapHardwareBuffer(it, null)
-                    ?: error("Failed to wrap rendered HardwareBuffer")
-                try {
-                    return hardwareBitmap.copy(Bitmap.Config.ARGB_8888, false)
-                } finally {
-                    hardwareBitmap.recycle()
-                }
-            }
-        } finally {
-            image.close()
-        }
+        val rotatedW = if (rotationDegrees == 90 || rotationDegrees == 270) srcH else srcW
+        val rotatedH = if (rotationDegrees == 90 || rotationDegrees == 270) srcW else srcH
+        matrix.postScale(dstW.toFloat() / rotatedW, dstH.toFloat() / rotatedH)
+        matrix.postTranslate(dstW / 2f, dstH / 2f)
+        return matrix
     }
 
     /**

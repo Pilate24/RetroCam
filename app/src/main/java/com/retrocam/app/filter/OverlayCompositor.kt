@@ -4,6 +4,8 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.Rect
+import android.graphics.RectF
 import android.graphics.Typeface
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -38,6 +40,85 @@ object OverlayCompositor {
     }
 
     private val stampTools = ThreadLocal.withInitial { StampTools() }
+
+    private class CanvasTools {
+        val framePaint = Paint()
+        val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
+        val srcCropRect = Rect()
+        val dstCropRect = RectF()
+        val geometry = FloatArray(3)
+    }
+
+    private val canvasTools = ThreadLocal.withInitial { CanvasTools() }
+
+    /**
+     * Renders [source] with [preset]'s frame border, aspect crop, and date stamp directly
+     * onto an existing hardware-accelerated [canvas] scaled to fit within [canvasWidth] x [canvasHeight].
+     *
+     * @return FloatArray(3) containing [destLeft, destTop, scale] for tap-to-focus calculation.
+     */
+    fun drawToCanvas(
+        canvas: Canvas,
+        source: Bitmap,
+        layout: Layout,
+        canvasWidth: Float,
+        canvasHeight: Float,
+        preset: FilterPreset,
+        date: Date
+    ): FloatArray {
+        val tools = canvasTools.get()!!
+        val scale = minOf(canvasWidth / layout.outputWidth.toFloat(), canvasHeight / layout.outputHeight.toFloat())
+        val dx = (canvasWidth - layout.outputWidth * scale) / 2f
+        val dy = (canvasHeight - layout.outputHeight * scale) / 2f
+
+        // 1. Black letterbox background
+        canvas.drawColor(Color.BLACK)
+
+        // 2. Polaroid / Retro frame border
+        if (preset.frame != null) {
+            tools.framePaint.color = preset.frame.color
+            canvas.drawRect(
+                dx, dy,
+                dx + layout.outputWidth * scale,
+                dy + layout.outputHeight * scale,
+                tools.framePaint
+            )
+        }
+
+        // 3. Image placement inside the border
+        val imgLeft = dx + layout.borderLeft * scale
+        val imgTop = dy + layout.borderTop * scale
+        val imgWidth = layout.cropWidth * scale
+        val imgHeight = layout.cropHeight * scale
+
+        tools.srcCropRect.set(
+            layout.cropLeft,
+            layout.cropTop,
+            layout.cropLeft + layout.cropWidth,
+            layout.cropTop + layout.cropHeight
+        )
+        tools.dstCropRect.set(
+            imgLeft,
+            imgTop,
+            imgLeft + imgWidth,
+            imgTop + imgHeight
+        )
+
+        canvas.drawBitmap(source, tools.srcCropRect, tools.dstCropRect, tools.bitmapPaint)
+
+        // 4. Optical date stamp
+        preset.dateStamp?.let { stamp ->
+            drawDateStamp(
+                canvas, stamp, date,
+                imgLeft.toInt(), imgTop.toInt(), imgWidth.toInt(), imgHeight.toInt()
+            )
+        }
+
+        tools.geometry[0] = dx
+        tools.geometry[1] = dy
+        tools.geometry[2] = scale
+        return tools.geometry
+    }
 
     /**
      * Where the picture sits inside the composed output. Tap-to-focus has to invert this to turn a

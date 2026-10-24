@@ -14,6 +14,7 @@ import android.os.Environment
 import android.provider.MediaStore
 import android.provider.Settings
 import android.util.Log
+import android.util.Size
 import android.view.GestureDetector
 import android.view.MotionEvent
 import android.view.ScaleGestureDetector
@@ -1062,20 +1063,30 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindPhotoUseCases(provider: ProcessCameraProvider) {
-        val resolutionSelector = ResolutionSelector.Builder()
+        val previewResolutionSelector = ResolutionSelector.Builder()
             .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .setResolutionStrategy(
+                ResolutionStrategy(
+                    Size(720, 960),
+                    ResolutionStrategy.FALLBACK_RULE_CLOSEST_HIGHER_THEN_LOWER
+                )
+            )
             .build()
 
         val analysis = ImageAnalysis.Builder()
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-            .setResolutionSelector(resolutionSelector)
+            .setResolutionSelector(previewResolutionSelector)
             .build()
             .also { it.setAnalyzer(cameraExecutor, ::processFrame) }
 
+        val captureResolutionSelector = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .build()
+
         val capture = ImageCapture.Builder()
             .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-            .setResolutionSelector(resolutionSelector)
+            .setResolutionSelector(captureResolutionSelector)
             .build()
         imageCapture = capture
 
@@ -1533,6 +1544,32 @@ class MainActivity : AppCompatActivity() {
         binding.zoomLabel.animate().alpha(0f).setDuration(260).start()
     }
 
+    private var pooledBitmap: Bitmap? = null
+
+    private fun getFrameBitmap(imageProxy: ImageProxy): Bitmap {
+        val plane = imageProxy.planes[0]
+        val buffer = plane.buffer
+        val rowStride = plane.rowStride
+        val pixelStride = plane.pixelStride
+        val width = imageProxy.width
+        val height = imageProxy.height
+
+        if (pixelStride == 4 && rowStride == width * 4) {
+            val bitmap = pooledBitmap.let {
+                if (it != null && it.width == width && it.height == height && !it.isRecycled) {
+                    it
+                } else {
+                    it?.recycle()
+                    Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888).also { b -> pooledBitmap = b }
+                }
+            }
+            buffer.rewind()
+            bitmap.copyPixelsFromBuffer(buffer)
+            return bitmap
+        }
+        return imageProxy.toBitmap()
+    }
+
     private fun processFrame(imageProxy: ImageProxy) {
         val preset = activePreset
         if (preset == null) {
@@ -1541,13 +1578,19 @@ class MainActivity : AppCompatActivity() {
         }
 
         val imageRotation = imageProxy.imageInfo.rotationDegrees
-        val rotated = rotateBitmap(imageProxy.toBitmap(), imageRotation, isFront = isFrontCamera())
+        val isFront = isFrontCamera()
+        val rawWidth = imageProxy.width
+        val rawHeight = imageProxy.height
+        val frameBitmap = getFrameBitmap(imageProxy)
         imageProxy.close()
 
+        val uprightWidth = if (imageRotation == 90 || imageRotation == 270) rawHeight else rawWidth
+        val uprightHeight = if (imageRotation == 90 || imageRotation == 270) rawWidth else rawHeight
+
         val renderer = previewRenderer.let { current ->
-            if (current == null || current.width != rotated.width || current.height != rotated.height) {
+            if (current == null || current.width != uprightWidth || current.height != uprightHeight) {
                 current?.close()
-                ShaderRenderer(rotated.width, rotated.height).also { previewRenderer = it }
+                ShaderRenderer(uprightWidth, uprightHeight).also { previewRenderer = it }
             } else {
                 current
             }
@@ -1556,51 +1599,46 @@ class MainActivity : AppCompatActivity() {
         val now = System.nanoTime()
         if (now - lastThumbnailSourceNanos > THUMBNAIL_REFRESH_NANOS) {
             lastThumbnailSourceNanos = now
-            thumbnails?.setSource(rotated)
+            val thumbRotated = rotateBitmap(frameBitmap, imageRotation, isFront)
+            thumbnails?.setSource(thumbRotated)
+            thumbRotated.recycle()
             runOnUiThread { carouselAdapter?.refreshThumbnails() }
         }
 
         if (now - lastCompareFrameNanos > COMPARE_FRAME_NANOS) {
             lastCompareFrameNanos = now
             val previous = latestFrame
+            val compareRotated = rotateBitmap(frameBitmap, imageRotation, isFront)
             latestFrame = Bitmap.createScaledBitmap(
-                rotated, COMPARE_FRAME_WIDTH,
-                (COMPARE_FRAME_WIDTH * rotated.height / rotated.width.toFloat()).toInt()
+                compareRotated, COMPARE_FRAME_WIDTH,
+                (COMPARE_FRAME_WIDTH * compareRotated.height / compareRotated.width.toFloat()).toInt()
                     .coerceAtLeast(1),
                 true
             )
+            compareRotated.recycle()
             previous?.recycle()
         }
 
         val elapsedSeconds = (now - startTimeNanos) / 1_000_000_000f
-        val filtered = try {
-            renderer.render(rotated, elapsedSeconds, preset)
+        val layout = OverlayCompositor.layoutFor(uprightWidth, uprightHeight, preset)
+        previewDate.time = System.currentTimeMillis()
+        latestComposedWidth = layout.outputWidth
+        latestComposedHeight = layout.outputHeight
+
+        try {
+            renderer.renderHardware(frameBitmap, imageRotation, isFront, elapsedSeconds, preset) { hwBitmap ->
+                drawHardwareToSurface(hwBitmap, layout, uprightWidth, uprightHeight, imageRotation)
+
+                if (isVideoMode && videoRecordingManager.isRecording) {
+                    videoRecordingManager.onNewHardwareFrame(hwBitmap, layout, preset, previewDate)
+                }
+            }
         } catch (e: RuntimeException) {
             Log.w(TAG, "Dropped preview frame", e)
             return
         }
 
-        previewDate.time = System.currentTimeMillis()
-        val composed = OverlayCompositor.compose(filtered, preset, previewDate)
-        latestComposedWidth = composed.width
-        latestComposedHeight = composed.height
-
-        drawToSurface(
-            composed,
-            OverlayCompositor.layoutFor(rotated.width, rotated.height, preset),
-            rotated.width,
-            rotated.height,
-            imageRotation
-        )
-
-        if (isVideoMode && videoRecordingManager.isRecording) {
-            videoRecordingManager.onNewFrame(composed)
-        }
-
-        if (composed !== filtered) filtered.recycle()
-        composed.recycle()
-
-        reportFrameRate(now, rotated.width, rotated.height)
+        reportFrameRate(now, uprightWidth, uprightHeight)
     }
 
     private fun reportFrameRate(nowNanos: Long, frameWidth: Int, frameHeight: Int) {
@@ -1620,7 +1658,7 @@ class MainActivity : AppCompatActivity() {
         fpsWindowStartNanos = nowNanos
     }
 
-    private fun drawToSurface(
+    private fun drawHardwareToSurface(
         bitmap: Bitmap,
         layout: OverlayCompositor.Layout,
         frameWidth: Int,
@@ -1636,22 +1674,24 @@ class MainActivity : AppCompatActivity() {
             return
         } ?: return
         try {
-            canvas.drawColor(Color.BLACK)
             val viewWidth = binding.viewFinder.width.toFloat()
             val viewHeight = binding.viewFinder.height.toFloat()
             if (viewWidth == 0f || viewHeight == 0f) return
 
-            val scale = minOf(viewWidth / bitmap.width, viewHeight / bitmap.height)
-            val dx = (viewWidth - bitmap.width * scale) / 2f
-            val dy = (viewHeight - bitmap.height * scale) / 2f
-            previewMatrix.setScale(scale, scale)
-            previewMatrix.postTranslate(dx, dy)
-            canvas.drawBitmap(bitmap, previewMatrix, null)
+            val geom = OverlayCompositor.drawToCanvas(
+                canvas = canvas,
+                source = bitmap,
+                layout = layout,
+                canvasWidth = viewWidth,
+                canvasHeight = viewHeight,
+                preset = activePreset ?: return,
+                date = previewDate
+            )
 
             previewGeometry = PreviewGeometry(
-                destLeft = dx,
-                destTop = dy,
-                scale = scale,
+                destLeft = geom[0],
+                destTop = geom[1],
+                scale = geom[2],
                 layout = layout,
                 frameWidth = frameWidth,
                 frameHeight = frameHeight,
@@ -1705,16 +1745,21 @@ class MainActivity : AppCompatActivity() {
 
         capture.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
-                val rotated = rotateBitmap(image.toBitmap(), image.imageInfo.rotationDegrees, isFront = isFrontCamera())
+                val rawBitmap = image.toBitmap()
+                val rotation = image.imageInfo.rotationDegrees
+                val isFront = isFrontCamera()
+                val uprightW = if (rotation == 90 || rotation == 270) image.height else image.width
+                val uprightH = if (rotation == 90 || rotation == 270) image.width else image.height
                 image.close()
 
-                val renderer = ShaderRenderer(rotated.width, rotated.height)
+                val renderer = ShaderRenderer(uprightW, uprightH)
                 val filtered = try {
-                    renderer.render(rotated, Random.nextFloat() * 100f, preset)
+                    renderer.render(rawBitmap, Random.nextFloat() * 100f, preset, rotation, isFront)
                 } catch (e: RuntimeException) {
                     Log.e(TAG, "Could not filter the captured photo", e)
                     return
                 } finally {
+                    rawBitmap.recycle()
                     renderer.close()
                 }
 
@@ -1767,6 +1812,8 @@ class MainActivity : AppCompatActivity() {
         if (::videoRecordingManager.isInitialized) {
             videoRecordingManager.release()
         }
+        pooledBitmap?.recycle()
+        pooledBitmap = null
         previewRenderer?.close()
         thumbnails?.close()
         cameraExecutor.shutdown()
