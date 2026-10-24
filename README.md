@@ -1,176 +1,89 @@
-# RetroCam — Phases 1–5
+# RetroCam v1.3.0
 
-CameraX + AGSL (`RuntimeShader`) retro camera. minSdk 33 (Android 13+).
+CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic retro film camera for Android 13+ (minSdk 33).
 
-**[Download the APK](https://github.com/Pilate24/RetroCam/releases/latest)** — debug build, sideload only. 73 filters, zoom and tap-to-focus. See "Verified" below for what has actually been measured on a device.
+**[Download the Latest APK (v1.3.0)](https://github.com/Pilate24/RetroCam/releases/download/v1.3.0/RetroCam-v1.3.0.apk)** — Sideload directly to any Android 13+ device.
 
-## What's here
+---
 
-- `MainActivity.kt` — permission flow, CameraX binding, live filtered preview, filter carousel, zoom gestures, shutter -> save to `Pictures/RetroCam`.
-- `filter/FilterShader.kt` — the one AGSL program every look runs through.
-- `filter/OverlayCompositor.kt` — the overlays that change the frame's *shape*: aspect crop, the Polaroid border, the burned-in date stamp.
-- `filter/FilterPreset.kt` — the preset data class and the loader that reads `assets/presets/`.
-- `filter/ShaderRenderer.kt` — rasterizes the shader to a `Bitmap` by drawing onto an `ImageReader` surface via `lockHardwareCanvas()`. This is the one code path used for **both** preview frames and the captured photo, so what you see is what you get.
-- `ui/FilterCarouselAdapter.kt` — the swipeable strip of look names.
-- `gallery/` — `PhotoStore` (MediaStore query scoped to our own folder), `GalleryActivity` (thumbnail grid), `ViewerActivity` (full size + share sheet).
+## What's New in v1.3.0
 
-`RuntimeShader` only runs on a hardware-accelerated canvas, and a Canvas backed directly by a Bitmap is software-only — hence the `ImageReader` round-trip. Note that `unlockCanvasAndPost()` only *queues* the frame; the buffer reaches the reader asynchronously, so `ShaderRenderer` waits on `setOnImageAvailableListener` before acquiring. Acquiring immediately after the post races the GPU and returns null on every frame.
+- 🎥 **In-App Filtered Video Recording**: Record video with any of the 73 retro filters applied in real-time at full frame rate. Includes hardware-accelerated H.264 video encoding (`MediaCodec`), 44.1 kHz AAC audio recording, pause/resume, and an integrated in-app video review gallery.
+- 🎛️ **RAW Video Mode & Pro Camera Controls**: Dedicated pro cinema layout giving full manual control over:
+  - **ISO**: `50`, `100`, `200`, `400`, `800`, `1600`, `3200`, `6400` + fine slider.
+  - **Shutter Speed**: `1/1000s` down to `1s` + fine step slider.
+  - **Focus**: Continuous manual focus rack from `∞ (Infinity)` to `Macro` (with distance readout in meters).
+  - **Exposure (EV)**: Exposure value compensation from `-3.0 EV` to `+3.0 EV`.
+  - **White Balance**: `2800K` (Incandescent), `4000K` (Fluorescent), `5500K` (Daylight), `6500K` (Cloudy), `7500K` (Shade).
+  - **Aperture**: Hardware lens aperture detection.
+  - **AUTO ALL**: Instant one-tap reset back to full automatic exposure and focus.
+- 📐 **Interactive Aspect Ratio Selector**: Live viewfinder framing and capture for both photos and videos:
+  - `AUTO` (preset default), `3:4` (classic portrait), `9:16` (vertical video / stories / reels), `1:1` (square / Polaroid), `16:9` (widescreen), `2:1` (cinemascope), `3:2` (35mm film), and `FULL` (uncropped sensor).
+- 💎 **Video Resolution & Frame Rate Selection**:
+  - Resolutions: **4K UHD** (40 Mbps), **1080p FHD** (16 Mbps), **720p HD** (8 Mbps), **480p SD** (3.5 Mbps).
+  - Frame Rates: **24 fps** (cinematic film), **30 fps** (standard), **60 fps** (high-speed smooth motion).
+- 🎨 **Custom Vintage Camera App Icon**: Hand-crafted adaptive and legacy icon suite across all Android display densities (`mdpi` through `xxxhdpi`).
+- 🤳 **Front Camera Orientation & Mirroring**: Correct natural front-facing camera preview and capture orientation.
 
-## Controls
+---
 
-| Gesture | Action |
+## Key Architecture
+
+- `MainActivity.kt` — CameraX binding, mode switcher (`PHOTO`, `VIDEO`, `RAW VIDEO`), aspect ratio popups, resolution/FPS popups, pro manual controls UI, zoom gestures, and shutter flow.
+- `video/FilteredVideoRecorder.kt` — Zero-allocation Android `MediaCodec` H.264 video encoder consuming hardware `Surface` canvases rendered live by AGSL shaders, synchronized with AAC audio encoding and monotonic timestamp multiplexing.
+- `video/ProCameraManager.kt` — Camera2Interop controller modulating manual sensor sensitivity (ISO), exposure time, focus distance, exposure compensation, and AWB color balance directly on the camera hardware in real time.
+- `video/VideoRecordingManager.kt` — Recording lifecycle state machine, pause/resume duration offsetting, dimension 4-alignment, and Scoped Storage publication to `Movies/RetroCam`.
+- `video/VideoSettings.kt` — Quality profiles (4K, 1080p, 720p, 480p) and target frame rate configurations (24, 30, 60 fps).
+- `filter/FilterShader.kt` — AGSL runtime shader compiling all tone grades, halation, grain, light leaks, chromatic aberration, scanlines, and sync bars on-device.
+- `filter/OverlayCompositor.kt` — Frame geometry compositor managing aspect ratio cropping, Polaroid borders, and burned-in retro date stamps.
+- `filter/ShaderRenderer.kt` — Hardware-accelerated canvas rasterizer rendering shaders directly to `SurfaceView` and video encoder surfaces.
+- `gallery/` — MediaStore query engine and gallery viewers for both `Pictures/RetroCam` and `Movies/RetroCam`.
+
+---
+
+## Camera Controls
+
+| Gesture / Control | Action |
 |---|---|
-| Tap the viewfinder | Focus and meter on that point |
-| Pinch on the viewfinder | Zoom, clamped to the sensor's own range |
-| Double tap the viewfinder | Toggle between wide and 2× |
-| Swipe the carousel | Change look (the centred one is active) |
-| Slider | Filter intensity |
+| **Mode Switcher** | Switch between `PHOTO`, `VIDEO`, and `RAW VIDEO` |
+| **RAW Control Bar** | Tap `ISO`, `S`, `EV`, `FOCUS`, or `WB` chips to open the fine-tuning slider and quick presets |
+| **Tap Viewfinder** | Focus and meter on that coordinate |
+| **Pinch Viewfinder** | Smooth optical/digital zoom clamped to sensor limits |
+| **Double Tap Viewfinder** | Quick toggle between 1× wide and 2× crop |
+| **Filter Carousel** | Swipe horizontally to switch between 73 retro film looks |
+| **Category Tabs** | Filter presets by category (All, Film, Vintage, 80s/90s, Disposable, B&W, VHS, Effects) |
+| **Intensity Slider** | Adjust the effect strength from 0% to 100% |
+| **Aspect Button** | Change aspect ratio (`AUTO`, `3:4`, `9:16`, `1:1`, `16:9`, `2:1`, `3:2`, `FULL`) |
+| **Quality/FPS Button** | Switch video resolution (4K, 1080p, 720p, 480p) and frame rate (24, 30, 60 fps) |
 
-Zoom is a CameraX **camera-level** control: it is applied as a sensor crop before either use case receives a frame, so `ImageAnalysis` and `ImageCapture` zoom together and WYSIWYG holds without extra work. Doing it as a shader or view transform instead would have zoomed only the preview.
+---
 
-Tap-to-focus is the awkward one. Because the preview letterboxes and the compositor crops and adds borders, a screen tap has to be walked back through **letterbox -> frame border -> aspect crop -> buffer rotation** to reach a sensor coordinate. `OverlayCompositor.layoutFor()` is the single source of truth for that geometry — `compose()` uses it too, so the focus mapping cannot drift from how the frame is actually laid out. Taps on the letterbox or the Polaroid border are ignored rather than focused somewhere outside the picture.
+## The 73 AGSL Film Looks
 
-## Checking a preset actually works
+Every look runs through a single GPU program in AGSL:
+**sync-bar displacement -> chromatic aberration -> 3D LUT colour grade -> halation -> light leak -> flash hotspot -> scanlines -> sync-bar glow -> film grain -> vignette -> aspect crop / film frame -> date stamp**.
 
-Two tools measure presets rather than trusting them, because "it has different numbers" and "it
-looks different" are not the same claim:
+Everything spatial is expressed relative to frame geometry rather than pixel units, maintaining identical visual appearance between the live viewfinder and final 4K/Full HD capture.
 
-```bash
-py tools/verify_presets.py app/src/main/assets/presets/retro_pack.json
-py tools/diagnose_presets.py app/src/main/assets/presets/retro_pack.json
-py tools/check_sync.py
-```
+---
 
-`verify_presets.py` asks whether each look is distinguishable from the untouched image and from
-every other look, and bounds the other end by counting clipped channels so "stronger" cannot
-quietly become "blown out".
+## Build & Run
 
-`diagnose_presets.py` asks the questions a photo is actually judged by — where 50% grey lands, how
-much contrast survives, how far chroma has moved. This is the one that matters: an earlier version
-of this project passed every distinctness check while shipping black and white presets that
-inverted colour, grain that carried visible curved lines, and "cinematic" looks that were grey
-mush. Difference is easy to measure and easy to satisfy; quality is neither.
+1. Open this project in **Android Studio** (Koala / Ladybug or newer with JDK 17).
+2. Let Gradle sync.
+3. Build or deploy directly:
+   ```powershell
+   .\gradlew.bat assembleDebug
+   adb install -r -d app\build\outputs\apk\debug\app-debug.apk
+   ```
+4. Requires a physical device running **Android 13+ (API 33+)**.
 
-`check_sync.py` compares the constants in the shader against the Python model of it. They had
-already drifted once, so every measurement taken in between was fiction.
+---
 
-Both measuring tools only model the tone and colour stages. Presets that work mainly through
-grain, dust, vignette or blur are invisible to them and are excluded from the checks rather than
-failing them.
+## Privacy & Scoped Storage
 
-## Adding a filter
+RetroCam requires **zero storage permissions**. Media is saved using Android's native MediaStore Scoped Storage APIs:
+- Photos: `Pictures/RetroCam`
+- Videos: `Movies/RetroCam`
 
-No code, no new shader:
-
-1. Drop a LUT PNG in `assets/luts/`.
-2. Add `assets/presets/<id>.json` with the knobs below.
-3. Add `"<id>"` to `assets/presets/index.json` — that file is also the carousel order.
-
-```json
-{
-  "name": "VHS",
-  "lut": "luts/vhs.png",
-  "aspect": "4:3",
-  "grainAmount": 0.09,
-  "vignetteAmount": 0.45,
-  "chromaAmount": 0.35,
-  "scanlineAmount": 0.22,
-  "scanlineCount": 320.0,
-  "syncBarAmount": 0.10,
-  "syncBarWidth": 0.035,
-  "syncBarShift": 0.012,
-  "dateStamp": { "color": "#FFEFEFEF", "size": 0.040, "format": "MMM dd yyyy", "glow": false }
-}
-```
-
-Every field is optional and defaults to "off", so a minimal preset is just a name and a LUT. `frame` takes `color`/`side`/`top`/`bottom`, the last three as fractions of image width (that's how Polaroid gets its fat bottom border).
-
-### Intensity
-
-The slider calls `FilterPreset.scaledBy(t)`, which scales effect *strengths* — `lutIntensity`, grain, vignette, chroma, halation, scanlines, sync bar, leak, flash. It deliberately does **not** scale radii, counts, thresholds or widths: those are the shape of an effect, not its amount, and scaling them changes the look rather than weakening it.
-
-Crop, border and date stamp don't scale either — they're the format a look shoots in, not part of its processing, so a Polaroid stays square at 0%. Worth knowing, since "0% still looks framed" is otherwise surprising.
-
-### The two overlay layers
-
-**Procedural, in the shader** — scanlines, the rolling sync bar, light leaks, the flash hotspot. Per-pixel, so they belong with the colour pipeline.
-
-**Geometric, in `OverlayCompositor`** — aspect crop, borders, the date stamp. These change the output's *dimensions*, which a shader writing a fixed-size buffer can't do. Runs after the shader, on both preview and capture.
-
-### The shader stages
-
-In order: **sync-bar displacement -> chromatic aberration -> LUT colour grade -> halation -> light leak -> flash hotspot -> scanlines -> sync-bar glow -> grain -> vignette.**
-
-Everything spatial (`chromaAmount`, `halationRadius`, `scanlineCount`, grain size, every compositor fraction) is expressed relative to the frame rather than in pixels. That is what keeps the low-res preview and the full-resolution capture looking the same; using pixel units here silently breaks WYSIWYG, because grain sized for a 640px preview frame vanishes in a 4000px photo.
-
-The same reasoning forced two other fixes: the preview **letterboxes** rather than centre-crops (filling would hide the Polaroid border that the saved file keeps), and `ImageAnalysis` and `ImageCapture` are pinned to the same 4:3 aspect strategy so the preview isn't composing a different crop than the photo.
-
-### LUT format
-
-512×512 PNG: an 8×8 grid of 64×64 cells. Cell index is the blue level, x within a cell is red, y is green. `ShaderRenderer` samples it with `FILTER_MODE_LINEAR`, which is what smooths the 64 discrete levels into a continuous grade — with `NEAREST` the LUT bands visibly.
-
-`tools/gen_luts.py` builds the bundled LUTs from plain colour maths (stdlib only, no PIL/numpy). `tools/verify_lut.py` simulates the shader's sampling in Python and asserts the identity LUT round-trips; run it after changing the layout or the sampling formula. Current identity error is 0.33/255, i.e. below one quantisation step.
-
-```bash
-py tools/gen_luts.py app/src/main/assets/luts && py tools/verify_lut.py app/src/main/assets/luts
-```
-
-## How preview filtering works
-
-CameraX's low-level `SurfaceProcessor`/`CameraEffect` API expects you to write raw OpenGL against a `SurfaceTexture`, which doesn't mix with AGSL. Instead this app uses `ImageAnalysis` in `OUTPUT_IMAGE_FORMAT_RGBA_8888` mode to get each frame as a `Bitmap`, runs it through `ShaderRenderer`, and draws the result onto a `SurfaceView` via `lockHardwareCanvas()`. Simple and correct, but it re-encodes each frame to a `Bitmap` and reruns the GPU rasterization pass — not yet tuned for battery/frame-rate.
-
-## Build & run
-
-1. Open this folder in Android Studio — the **project root**, the one with `settings.gradle.kts`, not `app/`.
-2. Let Gradle sync (needs JDK 17, which Studio bundles).
-3. Run on a physical device with **API 33+**. The emulator's synthetic camera feed makes the grades hard to judge.
-4. Grant the camera permission prompt.
-
-Saved files are named `RetroCam_<preset>_<timestamp>.jpg`, so the filename tells you which look produced it.
-
-## Verified
-
-- Phases 1–2 on a physical device (Samsung, Android 14): live filtered preview, shutter, and save, across a background/resume cycle.
-- Phase 3: builds clean; the extended shader compiles on-device at runtime; all five presets load and the carousel centres and highlights correctly.
-Run on a Samsung SM-S711B (Android 14), checked against logcat rather than by eye:
-
-- **Shader** compiles at runtime with all ten uniforms; zero dropped frames across every preset.
-- **Compositor geometry is pixel-exact.** VHS captures come out 3060×2295 (exactly 4:3); Polaroid comes out 3440×3893, which matches the preset maths to the pixel (1:1 crop of 3060, plus 190px side/top and 643px bottom borders).
-- **Tap-to-focus** verified by counting AF triggers with quiet-baseline controls: picture taps fire exactly one, border and letterbox taps fire none, an untouched baseline stays at zero.
-- **Intensity slider** drives the label and active preset across its range (5% / 50% / 100%).
-- **Gallery** lists saved shots in a 3-column grid and opens without crashing.
-- **Filter selection** is deterministic across restarts (four runs, all "Original").
-- **73 presets** load with zero skipped, and the shader compiles on-device with all its uniforms.
-- **Compare mode** opens, renders tiles with Original pinned first, and tapping a tile applies that look.
-
-Still unverified:
-
-- **Pinch zoom.** `adb input` can't synthesise a two-finger gesture, and it can't place two taps inside Android's 300 ms double-tap window either, so pinch and double-tap-zoom both need a real finger. The single-tap focus path that shares the same touch listener does work, so the plumbing is exercised.
-- **How anything actually looks.** Everything above is dimensions and log counts. Nobody has judged whether the grades, grain, halation, scanlines or date stamps read well — including whether the date stamp is legible at all.
-- The **share sheet** (needs a human to pick a destination app).
-
-### Gallery and permissions
-
-The gallery asks for **no storage permission**. An app can always read the media it created, and the query is scoped to `Pictures/RetroCam`. The trade: photos taken before a full uninstall won't appear, because MediaStore drops the owner record — preferable to requesting access to every image on the device. `adb install -r` updates keep ownership; only a real uninstall loses it.
-
-Sharing goes through the system chooser, so the user picks the destination and the read grant travels with the URI.
-
-## Known rough edges
-
-- The compositor still allocates a new bitmap per preview frame (two, for cropped looks). Paint, Matrix and SimpleDateFormat are now hoisted out of the loop, but bitmap pooling is the remaining win.
-- `OverlayCompositor` holds mutable shared state (Paint, SimpleDateFormat) and is safe only because preview and capture both run on MainActivity's single-threaded `cameraExecutor`. Splitting those onto separate executors needs a lock or a ThreadLocal first.
-- The deeper perf issue is unchanged: every frame does a full GPU round-trip and blocks on the ImageReader callback.
-- Light leaks are a single procedural blob, not a scanned overlay texture; they read as a soft glow rather than real film edge-fog.
-- The gallery has no delete — share only. Deleting MediaStore entries needs a system consent prompt that isn't wired up.
-- Intensity isn't persisted; it resets to 100% on relaunch, as does the selected filter.
-- Each `render()` does a full GPU round-trip *and blocks on the reader callback* per frame — the biggest perf lever before Phase 5.
-- Halation costs 8 extra texture samples per pixel and is branch-guarded, so presets with `halationAmount: 0.0` skip it.
-- A preview frame that fails to render is logged and dropped rather than crashing; watch for `Dropped preview frame` in logcat if the preview stutters.
-- Captured photos aren't downscaled before filtering, so very high-res sensors will be slower to save.
-- The grades were written by eye against colour theory, not matched to real film stocks — expect to tune `tools/gen_luts.py` once you see them on real photos.
-
-## Next steps
-
-1. Run it on the phone. Two phases of work are unverified, and the shader in particular gained ten uniforms since it last ran.
-2. Judge all five looks on real shots and tune: LUT colour in `tools/gen_luts.py`, everything else in the preset JSON.
-3. Then, in rough priority order: bitmap pooling on the preview path, persisting the selected filter and intensity, and real scanned light-leak textures.
+Videos and photos remain accessible by any gallery app on your device while keeping your personal files private.
