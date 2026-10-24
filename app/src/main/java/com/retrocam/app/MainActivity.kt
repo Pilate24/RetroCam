@@ -947,7 +947,8 @@ class MainActivity : AppCompatActivity() {
             pictureX > layout.cropWidth || pictureY > layout.cropHeight
         ) return
 
-        val u = (pictureX + layout.cropLeft) / geometry.frameWidth
+        val rawU = (pictureX + layout.cropLeft) / geometry.frameWidth
+        val u = if (isFrontCamera()) 1f - rawU else rawU
         val v = (pictureY + layout.cropTop) / geometry.frameHeight
 
         val bufferU: Float
@@ -1048,7 +1049,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         val imageRotation = imageProxy.imageInfo.rotationDegrees
-        val rotated = rotateBitmap(imageProxy.toBitmap(), imageRotation)
+        val rotated = rotateBitmap(imageProxy.toBitmap(), imageRotation, isFront = isFrontCamera())
         imageProxy.close()
 
         val renderer = previewRenderer.let { current ->
@@ -1165,9 +1166,19 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun rotateBitmap(source: Bitmap, degrees: Int): Bitmap {
-        if (degrees == 0) return source
-        val matrix = Matrix().apply { postRotate(degrees.toFloat()) }
+    private fun isFrontCamera(): Boolean =
+        cameraSelector == CameraSelector.DEFAULT_FRONT_CAMERA
+
+    private fun rotateBitmap(source: Bitmap, degrees: Int, isFront: Boolean = false): Bitmap {
+        val matrix = Matrix()
+        if (degrees != 0) {
+            matrix.postRotate(degrees.toFloat())
+        }
+        if (isFront) {
+            // Mirror horizontally so the front camera behaves like a natural selfie mirror
+            matrix.postScale(-1f, 1f)
+        }
+        if (matrix.isIdentity) return source
         return Bitmap.createBitmap(source, 0, 0, source.width, source.height, matrix, true)
     }
 
@@ -1194,7 +1205,7 @@ class MainActivity : AppCompatActivity() {
 
         capture.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
-                val rotated = rotateBitmap(image.toBitmap(), image.imageInfo.rotationDegrees)
+                val rotated = rotateBitmap(image.toBitmap(), image.imageInfo.rotationDegrees, isFront = isFrontCamera())
                 image.close()
 
                 val renderer = ShaderRenderer(rotated.width, rotated.height)
