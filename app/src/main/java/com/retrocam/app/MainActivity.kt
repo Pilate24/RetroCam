@@ -43,6 +43,9 @@ import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
 import com.retrocam.app.video.VideoFps
 import com.retrocam.app.video.VideoQuality
+import com.retrocam.app.video.ProCameraManager
+import android.widget.LinearLayout
+import android.widget.TextView
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
@@ -74,13 +77,19 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
-    enum class CameraMode { PHOTO, VIDEO }
+    enum class CameraMode { PHOTO, VIDEO, RAW_VIDEO }
+
+    enum class ProParam { ISO, SHUTTER, EV, FOCUS, WB }
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var videoRecordingManager: VideoRecordingManager
+    private val proCameraManager = ProCameraManager()
+    private var activeProParam: ProParam? = null
 
     private var cameraMode = CameraMode.PHOTO
+    private val isVideoMode: Boolean
+        get() = cameraMode == CameraMode.VIDEO || cameraMode == CameraMode.RAW_VIDEO
     private var cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
     private var cameraProvider: ProcessCameraProvider? = null
 
@@ -177,6 +186,7 @@ class MainActivity : AppCompatActivity() {
         setUpShutterAndControls()
         setUpTopBar()
         setUpModeSelector()
+        setUpProControls()
         setUpFlipCamera()
         setUpPermissionUI()
 
@@ -242,21 +252,42 @@ class MainActivity : AppCompatActivity() {
                 switchToMode(CameraMode.VIDEO)
             }
         }
+
+        binding.modeRawVideo.setOnClickListener {
+            if (cameraMode != CameraMode.RAW_VIDEO) {
+                switchToMode(CameraMode.RAW_VIDEO)
+            }
+        }
+    }
+
+    private fun updateModePills(mode: CameraMode) {
+        val selectedPill = when (mode) {
+            CameraMode.PHOTO -> binding.modePhoto
+            CameraMode.VIDEO -> binding.modeVideo
+            CameraMode.RAW_VIDEO -> binding.modeRawVideo
+        }
+
+        val allPills = listOf(binding.modePhoto, binding.modeVideo, binding.modeRawVideo)
+        for (pill in allPills) {
+            if (pill == selectedPill) {
+                pill.setBackgroundResource(R.drawable.mode_pill_selected)
+                pill.setTextColor(Color.BLACK)
+                pill.setTypeface(null, android.graphics.Typeface.BOLD)
+            } else {
+                pill.background = null
+                pill.setTextColor(ContextCompat.getColor(this, R.color.readout_dim))
+                pill.setTypeface(null, android.graphics.Typeface.NORMAL)
+            }
+        }
     }
 
     private fun switchToMode(mode: CameraMode) {
         if (videoRecordingManager.isRecording) return
+        val prevMode = cameraMode
         cameraMode = mode
+        updateModePills(mode)
 
         if (mode == CameraMode.PHOTO) {
-            binding.modePhoto.setBackgroundResource(R.drawable.mode_pill_selected)
-            binding.modePhoto.setTextColor(Color.BLACK)
-            binding.modePhoto.setTypeface(null, android.graphics.Typeface.BOLD)
-
-            binding.modeVideo.background = null
-            binding.modeVideo.setTextColor(ContextCompat.getColor(this, R.color.readout_dim))
-            binding.modeVideo.setTypeface(null, android.graphics.Typeface.NORMAL)
-
             binding.shutterButton.setBackgroundResource(R.drawable.shutter_button)
             binding.shutterButton.contentDescription = getString(R.string.shutter)
 
@@ -272,15 +303,12 @@ class MainActivity : AppCompatActivity() {
             binding.topBar.visibility = View.VISIBLE
             binding.timerButton.visibility = View.VISIBLE
             binding.videoQualityButton.visibility = View.GONE
-        } else {
-            binding.modeVideo.setBackgroundResource(R.drawable.mode_pill_selected)
-            binding.modeVideo.setTextColor(Color.BLACK)
-            binding.modeVideo.setTypeface(null, android.graphics.Typeface.BOLD)
+            binding.rawControlBar.visibility = View.GONE
+            binding.rawAdjustPanel.visibility = View.GONE
 
-            binding.modePhoto.background = null
-            binding.modePhoto.setTextColor(ContextCompat.getColor(this, R.color.readout_dim))
-            binding.modePhoto.setTypeface(null, android.graphics.Typeface.NORMAL)
-
+            camera?.let { proCameraManager.resetToAuto(it) }
+            startCamera()
+        } else if (mode == CameraMode.VIDEO) {
             binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
             binding.shutterButton.contentDescription = getString(R.string.record_video)
 
@@ -296,13 +324,352 @@ class MainActivity : AppCompatActivity() {
 
             binding.timerButton.visibility = View.GONE
             binding.videoQualityButton.visibility = View.VISIBLE
+            binding.rawControlBar.visibility = View.GONE
+            binding.rawAdjustPanel.visibility = View.GONE
             updateVideoQualityButton()
 
             checkAudioPermissionInfo()
+            camera?.let { proCameraManager.resetToAuto(it) }
+            if (prevMode == CameraMode.PHOTO) {
+                startCamera()
+            }
+        } else { // CameraMode.RAW_VIDEO
+            binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
+            binding.shutterButton.contentDescription = getString(R.string.record_video)
+
+            binding.videoPreviewView.visibility = View.GONE
+            binding.viewFinder.visibility = View.VISIBLE
+            binding.filterCarousel.visibility = View.VISIBLE
+            binding.categoryTabs.visibility = View.VISIBLE
+            binding.readoutRow.visibility = View.VISIBLE
+            binding.recordingIndicatorBar.visibility = View.GONE
+            binding.pauseResumeButton.visibility = View.GONE
+            binding.galleryButton.visibility = View.VISIBLE
+            binding.topBar.visibility = View.VISIBLE
+
+            binding.timerButton.visibility = View.GONE
+            binding.videoQualityButton.visibility = View.VISIBLE
+            binding.rawControlBar.visibility = View.VISIBLE
+            updateVideoQualityButton()
+            updateProChips()
+
+            checkAudioPermissionInfo()
+            if (prevMode == CameraMode.PHOTO) {
+                startCamera()
+            } else {
+                camera?.let { proCameraManager.apply(it) }
+            }
+        }
+    }
+
+    private fun setUpProControls() {
+        binding.chipIso.setOnClickListener { selectProParam(ProParam.ISO) }
+        binding.chipShutter.setOnClickListener { selectProParam(ProParam.SHUTTER) }
+        binding.chipEv.setOnClickListener { selectProParam(ProParam.EV) }
+        binding.chipFocus.setOnClickListener { selectProParam(ProParam.FOCUS) }
+        binding.chipWb.setOnClickListener { selectProParam(ProParam.WB) }
+
+        binding.chipAperture.setOnClickListener {
+            val apertures = proCameraManager.availableApertures
+            if (apertures.size > 1) {
+                val current = proCameraManager.selectedAperture ?: apertures.first()
+                val nextIdx = (apertures.indexOf(current) + 1) % apertures.size
+                proCameraManager.setAperture(apertures[nextIdx], camera)
+                updateProChips()
+                toast("Aperture: ${proCameraManager.getApertureSummary()}")
+            } else {
+                toast("Fixed lens: ${proCameraManager.getApertureSummary()}. Adjust EV for exposure.")
+            }
         }
 
-        startCamera()
+        binding.buttonRawReset.setOnClickListener {
+            camera?.let { cam ->
+                proCameraManager.resetToAuto(cam)
+            }
+            activeProParam = null
+            binding.rawAdjustPanel.visibility = View.GONE
+            highlightActiveProChip(null)
+            updateProChips()
+            toast("All camera controls reset to AUTO")
+        }
+
+        binding.rawCloseButton.setOnClickListener {
+            activeProParam = null
+            binding.rawAdjustPanel.visibility = View.GONE
+            highlightActiveProChip(null)
+        }
+
+        binding.rawAutoButton.setOnClickListener {
+            val param = activeProParam ?: return@setOnClickListener
+            when (param) {
+                ProParam.ISO -> proCameraManager.setIso(null, camera)
+                ProParam.SHUTTER -> proCameraManager.setShutterNanos(null, camera)
+                ProParam.EV -> proCameraManager.setEvIndex(0, camera)
+                ProParam.FOCUS -> proCameraManager.setFocusDistance(null, camera)
+                ProParam.WB -> proCameraManager.setWbMode(null, camera)
+            }
+            updateProChips()
+            configureAdjustPanelFor(param)
+        }
     }
+
+    private fun selectProParam(param: ProParam) {
+        if (activeProParam == param && binding.rawAdjustPanel.isVisible) {
+            activeProParam = null
+            binding.rawAdjustPanel.visibility = View.GONE
+            highlightActiveProChip(null)
+            return
+        }
+
+        if (param == ProParam.FOCUS && !proCameraManager.isManualFocusSupported) {
+            toast("Manual focus not supported by this lens")
+            return
+        }
+
+        activeProParam = param
+        highlightActiveProChip(param)
+        binding.rawAdjustPanel.visibility = View.VISIBLE
+        configureAdjustPanelFor(param)
+    }
+
+    private fun highlightActiveProChip(param: ProParam?) {
+        val chips = listOf(
+            ProParam.ISO to binding.chipIso,
+            ProParam.SHUTTER to binding.chipShutter,
+            ProParam.EV to binding.chipEv,
+            ProParam.FOCUS to binding.chipFocus,
+            ProParam.WB to binding.chipWb
+        )
+        for ((p, chip) in chips) {
+            if (p == param) {
+                chip.setBackgroundResource(R.drawable.pro_chip_selected_bg)
+            } else {
+                chip.setBackgroundResource(R.drawable.pro_chip_bg)
+            }
+        }
+    }
+
+    private fun updateProChips() {
+        binding.chipIso.text = "ISO ${proCameraManager.getIsoSummary()}"
+        binding.chipShutter.text = "S ${proCameraManager.getShutterSummary()}"
+        binding.chipEv.text = String.format("EV %+.1f", proCameraManager.evIndex * 0.5f)
+        binding.chipFocus.text = "FOCUS ${proCameraManager.getFocusSummary()}"
+        binding.chipWb.text = "WB ${proCameraManager.getWbSummary()}"
+        binding.chipAperture.text = proCameraManager.getApertureSummary()
+    }
+
+    private fun configureAdjustPanelFor(param: ProParam) {
+        binding.rawPresetsContainer.removeAllViews()
+        binding.rawSlider.clearOnChangeListeners()
+
+        when (param) {
+            ProParam.ISO -> {
+                val isManual = proCameraManager.isManualIso
+                binding.rawAdjustTitle.text = "ISO: ${proCameraManager.getIsoSummary()}"
+                updateAutoButtonState(!isManual)
+
+                val minIso = proCameraManager.isoRange.lower.toFloat()
+                val maxIso = proCameraManager.isoRange.upper.toFloat()
+                binding.rawSlider.valueFrom = minIso
+                binding.rawSlider.valueTo = maxIso
+                binding.rawSlider.stepSize = 50f
+                val currentVal = (if (isManual) proCameraManager.manualIso.toFloat() else 100f).coerceIn(minIso, maxIso)
+                binding.rawSlider.value = currentVal
+
+                binding.rawSlider.addOnChangeListener { _, value, fromUser ->
+                    if (fromUser) {
+                        proCameraManager.setIso(value.roundToInt(), camera)
+                        binding.rawAdjustTitle.text = "ISO: ${proCameraManager.manualIso}"
+                        binding.chipIso.text = "ISO ${proCameraManager.manualIso}"
+                        updateAutoButtonState(false)
+                    }
+                }
+
+                for (iso in ProCameraManager.COMMON_ISOS) {
+                    if (iso in proCameraManager.isoRange.lower..proCameraManager.isoRange.upper) {
+                        val isSelected = isManual && proCameraManager.manualIso == iso
+                        addPresetButton("$iso", isSelected) {
+                            proCameraManager.setIso(iso, camera)
+                            configureAdjustPanelFor(ProParam.ISO)
+                            updateProChips()
+                        }
+                    }
+                }
+            }
+
+            ProParam.SHUTTER -> {
+                val isManual = proCameraManager.isManualShutter
+                binding.rawAdjustTitle.text = "SHUTTER: ${proCameraManager.getShutterSummary()}"
+                updateAutoButtonState(!isManual)
+
+                val presets = ProCameraManager.COMMON_SHUTTERS
+                binding.rawSlider.valueFrom = 0f
+                binding.rawSlider.valueTo = (presets.size - 1).toFloat()
+                binding.rawSlider.stepSize = 1f
+
+                val currentIdx = presets.indexOfFirst { it.nanos == proCameraManager.manualShutterNanos }.takeIf { it >= 0 } ?: 4
+                binding.rawSlider.value = currentIdx.toFloat()
+
+                binding.rawSlider.addOnChangeListener { _, value, fromUser ->
+                    if (fromUser) {
+                        val preset = presets[value.toInt()]
+                        proCameraManager.setShutterNanos(preset.nanos, camera)
+                        binding.rawAdjustTitle.text = "SHUTTER: ${preset.label}s"
+                        binding.chipShutter.text = "S ${preset.label}s"
+                        updateAutoButtonState(false)
+                    }
+                }
+
+                for (preset in presets) {
+                    val isSelected = isManual && proCameraManager.manualShutterNanos == preset.nanos
+                    addPresetButton(preset.label, isSelected) {
+                        proCameraManager.setShutterNanos(preset.nanos, camera)
+                        configureAdjustPanelFor(ProParam.SHUTTER)
+                        updateProChips()
+                    }
+                }
+            }
+
+            ProParam.EV -> {
+                val currentEv = proCameraManager.evIndex * 0.5f
+                binding.rawAdjustTitle.text = String.format("EXPOSURE: %+.1f EV", currentEv)
+                updateAutoButtonState(proCameraManager.evIndex == 0)
+
+                binding.rawSlider.valueFrom = -6f
+                binding.rawSlider.valueTo = 6f
+                binding.rawSlider.stepSize = 1f
+                binding.rawSlider.value = proCameraManager.evIndex.toFloat().coerceIn(-6f, 6f)
+
+                binding.rawSlider.addOnChangeListener { _, value, fromUser ->
+                    if (fromUser) {
+                        val idx = value.toInt()
+                        proCameraManager.setEvIndex(idx, camera)
+                        val ev = idx * 0.5f
+                        binding.rawAdjustTitle.text = String.format("EXPOSURE: %+.1f EV", ev)
+                        binding.chipEv.text = String.format("EV %+.1f", ev)
+                        updateAutoButtonState(idx == 0)
+                    }
+                }
+
+                val evPresets = listOf(-4 to "-2.0", -2 to "-1.0", -1 to "-0.5", 0 to "0.0", 1 to "+0.5", 2 to "+1.0", 4 to "+2.0")
+                for ((idx, label) in evPresets) {
+                    val isSelected = proCameraManager.evIndex == idx
+                    addPresetButton(label, isSelected) {
+                        proCameraManager.setEvIndex(idx, camera)
+                        configureAdjustPanelFor(ProParam.EV)
+                        updateProChips()
+                    }
+                }
+            }
+
+            ProParam.FOCUS -> {
+                val isManual = proCameraManager.isManualFocus
+                binding.rawAdjustTitle.text = "FOCUS: ${proCameraManager.getFocusSummary()}"
+                updateAutoButtonState(!isManual)
+
+                val maxDist = proCameraManager.minFocusDistance.takeIf { it > 0f } ?: 10f
+                binding.rawSlider.valueFrom = 0f
+                binding.rawSlider.valueTo = maxDist
+                binding.rawSlider.stepSize = maxDist / 50f
+                val currentDist = (if (isManual) proCameraManager.manualFocusDistance else 0f).coerceIn(0f, maxDist)
+                binding.rawSlider.value = currentDist
+
+                binding.rawSlider.addOnChangeListener { _, value, fromUser ->
+                    if (fromUser) {
+                        proCameraManager.setFocusDistance(value, camera)
+                        binding.rawAdjustTitle.text = "FOCUS: ${proCameraManager.getFocusSummary()}"
+                        binding.chipFocus.text = "FOCUS ${proCameraManager.getFocusSummary()}"
+                        updateAutoButtonState(false)
+                    }
+                }
+
+                val focusPresets = listOf(
+                    "∞" to 0f,
+                    "2.0m" to (maxDist * 0.2f),
+                    "1.0m" to (maxDist * 0.4f),
+                    "0.5m" to (maxDist * 0.7f),
+                    "Macro" to maxDist
+                )
+                for ((label, dist) in focusPresets) {
+                    val isSelected = isManual && Math.abs(proCameraManager.manualFocusDistance - dist) < 0.2f
+                    addPresetButton(label, isSelected) {
+                        proCameraManager.setFocusDistance(dist, camera)
+                        configureAdjustPanelFor(ProParam.FOCUS)
+                        updateProChips()
+                    }
+                }
+            }
+
+            ProParam.WB -> {
+                val isManual = proCameraManager.isManualWb
+                binding.rawAdjustTitle.text = "WHITE BALANCE: ${proCameraManager.getWbSummary()}"
+                updateAutoButtonState(!isManual)
+
+                val presets = ProCameraManager.COMMON_WB_MODES
+                binding.rawSlider.valueFrom = 0f
+                binding.rawSlider.valueTo = (presets.size - 1).toFloat()
+                binding.rawSlider.stepSize = 1f
+                val currentIdx = presets.indexOfFirst { it.mode == proCameraManager.wbMode }.takeIf { it >= 0 } ?: 2
+                binding.rawSlider.value = currentIdx.toFloat()
+
+                binding.rawSlider.addOnChangeListener { _, value, fromUser ->
+                    if (fromUser) {
+                        val preset = presets[value.toInt()]
+                        proCameraManager.setWbMode(preset.mode, camera)
+                        binding.rawAdjustTitle.text = "WHITE BALANCE: ${preset.kelvin} (${preset.label})"
+                        binding.chipWb.text = "WB ${preset.kelvin}"
+                        updateAutoButtonState(false)
+                    }
+                }
+
+                for (preset in presets) {
+                    val isSelected = isManual && proCameraManager.wbMode == preset.mode
+                    addPresetButton("${preset.kelvin} ${preset.label}", isSelected) {
+                        proCameraManager.setWbMode(preset.mode, camera)
+                        configureAdjustPanelFor(ProParam.WB)
+                        updateProChips()
+                    }
+                }
+            }
+        }
+    }
+
+    private fun updateAutoButtonState(isAuto: Boolean) {
+        if (isAuto) {
+            binding.rawAutoButton.setBackgroundResource(R.drawable.mode_pill_selected)
+            binding.rawAutoButton.setTextColor(Color.BLACK)
+        } else {
+            binding.rawAutoButton.setBackgroundResource(R.drawable.zoom_pill)
+            binding.rawAutoButton.setTextColor(Color.WHITE)
+        }
+    }
+
+    private fun addPresetButton(text: String, isSelected: Boolean, onClick: () -> Unit) {
+        val button = TextView(this).apply {
+            this.text = text
+            textSize = 10f
+            typeface = android.graphics.Typeface.MONOSPACE
+            val padH = dpToPx(8)
+            val padV = dpToPx(3)
+            setPadding(padH, padV, padH, padV)
+            val lp = LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.WRAP_CONTENT,
+                LinearLayout.LayoutParams.WRAP_CONTENT
+            ).apply { marginEnd = dpToPx(6) }
+            layoutParams = lp
+            if (isSelected) {
+                setBackgroundResource(R.drawable.mode_pill_selected)
+                setTextColor(Color.BLACK)
+            } else {
+                setBackgroundResource(R.drawable.pro_chip_bg)
+                setTextColor(ContextCompat.getColor(this@MainActivity, R.color.readout))
+            }
+            setOnClickListener { onClick() }
+        }
+        binding.rawPresetsContainer.addView(button)
+    }
+
+    private fun dpToPx(dp: Int): Int = (dp * resources.displayMetrics.density).roundToInt()
 
     private fun checkAudioPermissionInfo() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
@@ -392,6 +759,8 @@ class MainActivity : AppCompatActivity() {
                 binding.filterCarousel.alpha = 1f
                 binding.categoryTabs.isEnabled = true
                 binding.categoryTabs.alpha = 1f
+                binding.rawControlBar.isEnabled = true
+                binding.rawControlBar.alpha = 1f
                 binding.shutterButton.isEnabled = true
                 binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
                 binding.shutterButton.contentDescription = getString(R.string.record_video)
@@ -420,6 +789,9 @@ class MainActivity : AppCompatActivity() {
                 binding.filterCarousel.alpha = 0.4f
                 binding.categoryTabs.isEnabled = false
                 binding.categoryTabs.alpha = 0.4f
+                binding.rawControlBar.isEnabled = false
+                binding.rawControlBar.alpha = 0.4f
+                binding.rawAdjustPanel.visibility = View.GONE
                 binding.intensitySlider.visibility = View.GONE
                 binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_stop)
                 binding.shutterButton.contentDescription = getString(R.string.stop_recording)
@@ -448,6 +820,9 @@ class MainActivity : AppCompatActivity() {
                 binding.filterCarousel.alpha = 0.4f
                 binding.categoryTabs.isEnabled = false
                 binding.categoryTabs.alpha = 0.4f
+                binding.rawControlBar.isEnabled = false
+                binding.rawControlBar.alpha = 0.4f
+                binding.rawAdjustPanel.visibility = View.GONE
                 binding.intensitySlider.visibility = View.GONE
                 binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_stop)
                 binding.shutterButton.contentDescription = getString(R.string.stop_recording)
@@ -669,6 +1044,14 @@ class MainActivity : AppCompatActivity() {
                     bindVideoUseCases(provider)
                 }
 
+                camera?.let { cam ->
+                    proCameraManager.updateCapabilities(cam)
+                    if (cameraMode == CameraMode.RAW_VIDEO) {
+                        proCameraManager.apply(cam)
+                        updateProChips()
+                    }
+                }
+
                 observeZoom()
                 setStatus(R.string.status_ready)
             } catch (e: Exception) {
@@ -801,7 +1184,7 @@ class MainActivity : AppCompatActivity() {
         binding.flashButton.setOnClickListener {
             flash = FlashChoice.entries[(flash.ordinal + 1) % FlashChoice.entries.size]
             imageCapture?.flashMode = flash.mode
-            if (cameraMode == CameraMode.VIDEO) {
+            if (isVideoMode) {
                 // Torch mode for video
                 camera?.cameraControl?.enableTorch(flash == FlashChoice.ON)
             }
@@ -812,7 +1195,7 @@ class MainActivity : AppCompatActivity() {
         binding.flashButton.alpha = 0.65f
 
         binding.timerButton.setOnClickListener {
-            if (cameraMode == CameraMode.VIDEO) {
+            if (isVideoMode) {
                 toast("Self-timer is for photo mode")
                 return@setOnClickListener
             }
@@ -868,7 +1251,7 @@ class MainActivity : AppCompatActivity() {
                 toast("Frame Rate: ${f.label}")
             }
             updateVideoQualityButton()
-            if (cameraMode == CameraMode.VIDEO) {
+            if (isVideoMode) {
                 startCamera()
             }
             true
@@ -912,7 +1295,7 @@ class MainActivity : AppCompatActivity() {
                         true
                     }
                     R.id.menuSurprise -> {
-                        if (cameraMode == CameraMode.VIDEO) {
+                        if (isVideoMode) {
                             toast("Surprise mode is for photo mode")
                             return@setOnMenuItemClickListener true
                         }
@@ -928,7 +1311,7 @@ class MainActivity : AppCompatActivity() {
                         true
                     }
                     R.id.menuCompare -> {
-                        if (cameraMode == CameraMode.VIDEO) {
+                        if (isVideoMode) {
                             toast("Camera compare is for photo mode")
                             return@setOnMenuItemClickListener true
                         }
@@ -1210,7 +1593,7 @@ class MainActivity : AppCompatActivity() {
             imageRotation
         )
 
-        if (cameraMode == CameraMode.VIDEO && videoRecordingManager.isRecording) {
+        if (isVideoMode && videoRecordingManager.isRecording) {
             videoRecordingManager.onNewFrame(composed)
         }
 
