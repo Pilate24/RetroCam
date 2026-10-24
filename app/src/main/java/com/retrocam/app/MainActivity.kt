@@ -27,6 +27,10 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
+import android.hardware.camera2.CaptureRequest
+import android.util.Range
+import androidx.camera.camera2.interop.Camera2Interop
+import androidx.camera.camera2.interop.ExperimentalCamera2Interop
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
@@ -35,7 +39,10 @@ import androidx.camera.core.Preview
 import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
+import androidx.camera.core.resolutionselector.ResolutionStrategy
 import androidx.camera.lifecycle.ProcessCameraProvider
+import com.retrocam.app.video.VideoFps
+import com.retrocam.app.video.VideoQuality
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
@@ -114,6 +121,8 @@ class MainActivity : AppCompatActivity() {
     private var flash = FlashChoice.OFF
     private var timerSeconds = 0
     private var aspect = AspectChoice.AUTO
+    private var videoQuality = VideoQuality.FHD_1080P
+    private var videoFps = VideoFps.FPS_30
     private var countingDown = false
     private var surpriseMode = false
     private var lastSurpriseId: String? = null
@@ -261,6 +270,8 @@ class MainActivity : AppCompatActivity() {
             binding.galleryButton.visibility = View.VISIBLE
 
             binding.topBar.visibility = View.VISIBLE
+            binding.timerButton.visibility = View.VISIBLE
+            binding.videoQualityButton.visibility = View.GONE
         } else {
             binding.modeVideo.setBackgroundResource(R.drawable.mode_pill_selected)
             binding.modeVideo.setTextColor(Color.BLACK)
@@ -282,6 +293,10 @@ class MainActivity : AppCompatActivity() {
             binding.pauseResumeButton.visibility = View.GONE
             binding.galleryButton.visibility = View.VISIBLE
             binding.topBar.visibility = View.VISIBLE
+
+            binding.timerButton.visibility = View.GONE
+            binding.videoQualityButton.visibility = View.VISIBLE
+            updateVideoQualityButton()
 
             checkAudioPermissionInfo()
         }
@@ -342,7 +357,7 @@ class MainActivity : AppCompatActivity() {
     private fun startVideoRecording() {
         val width = latestComposedWidth.takeIf { it > 0 } ?: 720
         val height = latestComposedHeight.takeIf { it > 0 } ?: 1280
-        videoRecordingManager.startRecording(width, height)
+        videoRecordingManager.startRecording(width, height, fps = videoFps, quality = videoQuality)
     }
 
     private fun handleVideoRecordClick() {
@@ -371,6 +386,8 @@ class MainActivity : AppCompatActivity() {
                 binding.flipCameraButton.alpha = 1f
                 binding.aspectButton.isEnabled = true
                 binding.aspectButton.alpha = 1f
+                binding.videoQualityButton.isEnabled = true
+                binding.videoQualityButton.alpha = 1f
                 binding.filterCarousel.isEnabled = true
                 binding.filterCarousel.alpha = 1f
                 binding.categoryTabs.isEnabled = true
@@ -397,6 +414,8 @@ class MainActivity : AppCompatActivity() {
                 binding.flipCameraButton.alpha = 0.4f
                 binding.aspectButton.isEnabled = false
                 binding.aspectButton.alpha = 0.4f
+                binding.videoQualityButton.isEnabled = false
+                binding.videoQualityButton.alpha = 0.4f
                 binding.filterCarousel.isEnabled = false
                 binding.filterCarousel.alpha = 0.4f
                 binding.categoryTabs.isEnabled = false
@@ -423,6 +442,8 @@ class MainActivity : AppCompatActivity() {
                 binding.flipCameraButton.alpha = 0.4f
                 binding.aspectButton.isEnabled = false
                 binding.aspectButton.alpha = 0.4f
+                binding.videoQualityButton.isEnabled = false
+                binding.videoQualityButton.alpha = 0.4f
                 binding.filterCarousel.isEnabled = false
                 binding.filterCarousel.alpha = 0.4f
                 binding.categoryTabs.isEnabled = false
@@ -680,16 +701,34 @@ class MainActivity : AppCompatActivity() {
         )
     }
 
+    @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
     private fun bindVideoUseCases(provider: ProcessCameraProvider) {
+        val targetSize = videoQuality.targetSize()
+        val resolutionStrategy = ResolutionStrategy(
+            targetSize,
+            ResolutionStrategy.FALLBACK_RULE_CLOSEST_LOWER_THEN_HIGHER
+        )
         val resolutionSelector = ResolutionSelector.Builder()
             .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .setResolutionStrategy(resolutionStrategy)
             .build()
 
-        val analysis = ImageAnalysis.Builder()
+        val analysisBuilder = ImageAnalysis.Builder()
             .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
             .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
             .setResolutionSelector(resolutionSelector)
-            .build()
+
+        try {
+            val extender = Camera2Interop.Extender(analysisBuilder)
+            extender.setCaptureRequestOption(
+                CaptureRequest.CONTROL_AE_TARGET_FPS_RANGE,
+                Range(videoFps.fps, videoFps.fps)
+            )
+        } catch (e: Exception) {
+            Log.w(TAG, "Failed setting FPS range on camera", e)
+        }
+
+        val analysis = analysisBuilder.build()
             .also { it.setAnalyzer(cameraExecutor, ::processFrame) }
 
         camera = provider.bindToLifecycle(
@@ -791,7 +830,50 @@ class MainActivity : AppCompatActivity() {
         binding.aspectButton.setOnClickListener { showAspectMenu(it) }
         binding.aspectButton.text = aspect.label
 
+        binding.videoQualityButton.setOnClickListener { showQualityFpsMenu(it) }
+        updateVideoQualityButton()
+
         binding.overflowButton.setOnClickListener { showOverflow(it) }
+    }
+
+    private fun updateVideoQualityButton() {
+        binding.videoQualityButton.text = "${videoQuality.label} · ${videoFps.fps}fps"
+    }
+
+    private fun showQualityFpsMenu(anchor: View) {
+        if (videoRecordingManager.isRecording) {
+            toast("Cannot change video quality while recording")
+            return
+        }
+        val popup = PopupMenu(this, anchor)
+        // Resolutions
+        VideoQuality.entries.forEachIndexed { index, q ->
+            val title = if (q == videoQuality) "✓ ${q.label}" else "    ${q.label}"
+            popup.menu.add(1, index, index, title)
+        }
+        // Frame rates (offset by 100)
+        VideoFps.entries.forEachIndexed { index, f ->
+            val title = if (f == videoFps) "✓ ${f.label}" else "    ${f.label}"
+            popup.menu.add(2, 100 + index, 100 + index, title)
+        }
+        popup.setOnMenuItemClickListener { item ->
+            val id = item.itemId
+            if (id < 100) {
+                val q = VideoQuality.entries.getOrNull(id) ?: return@setOnMenuItemClickListener false
+                videoQuality = q
+                toast("Video Quality: ${q.label}")
+            } else {
+                val f = VideoFps.entries.getOrNull(id - 100) ?: return@setOnMenuItemClickListener false
+                videoFps = f
+                toast("Frame Rate: ${f.label}")
+            }
+            updateVideoQualityButton()
+            if (cameraMode == CameraMode.VIDEO) {
+                startCamera()
+            }
+            true
+        }
+        popup.show()
     }
 
     private fun showAspectMenu(anchor: View) {

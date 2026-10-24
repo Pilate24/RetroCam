@@ -30,6 +30,8 @@ class FilteredVideoRecorder(
     private val outputFile: File,
     val width: Int,
     val height: Int,
+    val targetFps: Int = 30,
+    val targetBitrate: Int = 6_000_000,
     val audioEnabled: Boolean,
     private val onDurationUpdate: (durationMs: Long) -> Unit,
     private val onError: (message: String, throwable: Throwable?) -> Unit
@@ -62,6 +64,7 @@ class FilteredVideoRecorder(
     private var startNanoTime = 0L
     private var pauseStartNanoTime = 0L
     private var accumulatedPauseDurationNano = 0L
+    private var lastEncodedFrameNanoTime = 0L
     private var lastVideoPtsUs = 0L
     private var lastAudioPtsUs = 0L
     private var totalRecordedDurationMs = 0L
@@ -73,8 +76,6 @@ class FilteredVideoRecorder(
         private const val TAG = "FilteredVideoRecorder"
         private const val VIDEO_MIME = MediaFormat.MIMETYPE_VIDEO_AVC
         private const val AUDIO_MIME = MediaFormat.MIMETYPE_AUDIO_AAC
-        private const val BIT_RATE = 6_000_000 // 6 Mbps
-        private const val FRAME_RATE = 30
         private const val I_FRAME_INTERVAL = 1 // 1 keyframe per second
         private const val AUDIO_SAMPLE_RATE = 44100
         private const val AUDIO_BIT_RATE = 128_000
@@ -89,8 +90,8 @@ class FilteredVideoRecorder(
             // Setup Video Encoder
             val videoFormat = MediaFormat.createVideoFormat(VIDEO_MIME, width, height).apply {
                 setInteger(MediaFormat.KEY_COLOR_FORMAT, MediaCodecInfo.CodecCapabilities.COLOR_FormatSurface)
-                setInteger(MediaFormat.KEY_BIT_RATE, BIT_RATE)
-                setInteger(MediaFormat.KEY_FRAME_RATE, FRAME_RATE)
+                setInteger(MediaFormat.KEY_BIT_RATE, targetBitrate)
+                setInteger(MediaFormat.KEY_FRAME_RATE, targetFps)
                 setInteger(MediaFormat.KEY_I_FRAME_INTERVAL, I_FRAME_INTERVAL)
             }
 
@@ -175,6 +176,12 @@ class FilteredVideoRecorder(
     fun encodeFrame(bitmap: Bitmap) {
         if (!isRecording.get() || isPaused.get()) return
 
+        val now = System.nanoTime()
+        val minIntervalNano = (1_000_000_000L / targetFps) - 3_000_000L
+        if (lastEncodedFrameNanoTime != 0L && (now - lastEncodedFrameNanoTime) < minIntervalNano) {
+            return
+        }
+
         val surface = inputSurface ?: return
 
         synchronized(frameLock) {
@@ -193,10 +200,10 @@ class FilteredVideoRecorder(
                     surface.unlockCanvasAndPost(canvas)
                 }
 
+                lastEncodedFrameNanoTime = now
                 drainVideoEncoder(endOfStream = false)
 
                 // Update duration
-                val now = System.nanoTime()
                 val elapsedNano = now - startNanoTime - accumulatedPauseDurationNano
                 val durationMs = (elapsedNano / 1_000_000L).coerceAtLeast(0L)
                 totalRecordedDurationMs = durationMs

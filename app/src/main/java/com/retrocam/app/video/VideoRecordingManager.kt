@@ -56,7 +56,12 @@ class VideoRecordingManager(
     /**
      * Starts recording filtered video. Width and height are aligned to even values for encoder compatibility.
      */
-    fun startRecording(rawWidth: Int, rawHeight: Int) {
+    fun startRecording(
+        rawWidth: Int,
+        rawHeight: Int,
+        fps: VideoFps = VideoFps.FPS_30,
+        quality: VideoQuality = VideoQuality.FHD_1080P
+    ) {
         if (activeRecorder != null || isRecording) {
             Log.w(TAG, "Recording already in progress, ignoring start request")
             return
@@ -78,6 +83,7 @@ class VideoRecordingManager(
         // Divisible by 4 and safe minimum for universal H.264 hardware encoder support
         val encWidth = ((rawWidth / 4) * 4).coerceAtLeast(320)
         val encHeight = ((rawHeight / 4) * 4).coerceAtLeast(320)
+        val targetBitrate = quality.bitrateFor(fps)
 
         onStateChanged(RecordingState.Starting(audioEnabledForCurrent))
 
@@ -86,6 +92,8 @@ class VideoRecordingManager(
                 outputFile = tempFile,
                 width = encWidth,
                 height = encHeight,
+                targetFps = fps.fps,
+                targetBitrate = targetBitrate,
                 audioEnabled = audioEnabledForCurrent,
                 onDurationUpdate = { durationMs ->
                     recordedDurationMs = durationMs

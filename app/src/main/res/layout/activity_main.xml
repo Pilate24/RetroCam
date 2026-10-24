@@ -63,6 +63,13 @@
             style="@style/TopBarLabel"
             android:contentDescription="@string/aspect_ratio" />
 
+        <TextView
+            android:id="@+id/videoQualityButton"
+            style="@style/TopBarLabel"
+            android:layout_marginStart="6dp"
+            android:contentDescription="Video quality and frame rate"
+            android:visibility="gone" />
+
         <Space
             android:layout_width="0dp"
             android:layout_height="1dp"
