@@ -5,6 +5,7 @@
     android:layout_height="match_parent"
     android:background="@android:color/black">
 
+    <!-- Photo Mode ViewFinder (Custom AGSL Shader rendering) -->
     <SurfaceView
         android:id="@+id/viewFinder"
         android:layout_width="match_parent"
@@ -12,6 +13,13 @@
         android:clickable="true"
         android:contentDescription="@string/viewfinder"
         android:focusable="true" />
+
+    <!-- Video Mode ViewFinder (CameraX PreviewView) -->
+    <androidx.camera.view.PreviewView
+        android:id="@+id/videoPreviewView"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone" />
 
     <!-- Composition aid: interface only, never drawn into a capture. -->
     <com.retrocam.app.ui.GridOverlayView
@@ -86,6 +94,68 @@
         android:textColor="@color/amber"
         android:textSize="11sp" />
 
+    <!-- Video Recording Status Overlay -->
+    <LinearLayout
+        android:id="@+id/recordingIndicatorBar"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="76dp"
+        android:background="@drawable/recording_pill_bg"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="5dp"
+        android:visibility="gone">
+
+        <ImageView
+            android:id="@+id/recordDot"
+            android:layout_width="10dp"
+            android:layout_height="10dp"
+            android:layout_marginEnd="8dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_record_dot" />
+
+        <TextView
+            android:id="@+id/recordStateText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.1"
+            android:text="@string/status_recording"
+            android:textColor="@color/record_red"
+            android:textSize="12sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/recordTimerText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="00:00"
+            android:textColor="@color/readout"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/micStatusBadge"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="8dp"
+            android:background="@drawable/readout_bg"
+            android:fontFamily="monospace"
+            android:paddingStart="6dp"
+            android:paddingTop="1dp"
+            android:paddingEnd="6dp"
+            android:paddingBottom="1dp"
+            android:text="@string/audio_muted_badge"
+            android:textColor="@color/amber"
+            android:textSize="9sp"
+            android:visibility="gone" />
+    </LinearLayout>
+
     <TextView
         android:id="@+id/countdownLabel"
         android:layout_width="wrap_content"
@@ -126,6 +196,7 @@
 
     <!-- The camera body. Kept as short as it can be: every dp here covers live image. -->
     <LinearLayout
+        android:id="@+id/cameraBody"
         android:layout_width="match_parent"
         android:layout_height="wrap_content"
         android:layout_gravity="bottom"
@@ -199,6 +270,49 @@
             android:orientation="horizontal"
             android:overScrollMode="never" />
 
+        <!-- Camera Mode Switcher: PHOTO / VIDEO -->
+        <LinearLayout
+            android:id="@+id/modeSelector"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center_horizontal"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="4dp"
+            android:background="@drawable/zoom_pill"
+            android:orientation="horizontal"
+            android:padding="3dp">
+
+            <TextView
+                android:id="@+id/modePhoto"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/mode_pill_selected"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.1"
+                android:paddingStart="14dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="4dp"
+                android:text="@string/mode_photo"
+                android:textColor="@android:color/black"
+                android:textSize="11sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/modeVideo"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:letterSpacing="0.1"
+                android:paddingStart="14dp"
+                android:paddingTop="4dp"
+                android:paddingEnd="14dp"
+                android:paddingBottom="4dp"
+                android:text="@string/mode_video"
+                android:textColor="@color/readout_dim"
+                android:textSize="11sp" />
+        </LinearLayout>
+
         <FrameLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -217,14 +331,129 @@
                 android:tint="@color/readout" />
 
             <ImageButton
+                android:id="@+id/pauseResumeButton"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_gravity="start|center_vertical"
+                android:layout_marginStart="34dp"
+                android:background="@drawable/zoom_pill"
+                android:contentDescription="@string/pause_recording"
+                android:padding="11dp"
+                android:src="@drawable/ic_pause"
+                android:tint="@color/amber"
+                android:visibility="gone" />
+
+            <ImageButton
                 android:id="@+id/shutterButton"
                 android:layout_width="66dp"
                 android:layout_height="66dp"
                 android:layout_gravity="center_horizontal"
                 android:background="@drawable/shutter_button"
                 android:contentDescription="@string/shutter" />
+
+            <ImageButton
+                android:id="@+id/flipCameraButton"
+                android:layout_width="46dp"
+                android:layout_height="46dp"
+                android:layout_gravity="end|center_vertical"
+                android:layout_marginEnd="34dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="@string/switch_camera"
+                android:padding="10dp"
+                android:src="@drawable/ic_camera_flip"
+                android:tint="@color/readout" />
         </FrameLayout>
 
+    </LinearLayout>
+
+    <!-- Permission Denied Screen -->
+    <LinearLayout
+        android:id="@+id/permissionDeniedContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#E6000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="@string/permission_denied_title"
+            android:textColor="@color/amber"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/permissionDeniedExplanation"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="12dp"
+            android:gravity="center"
+            android:text="@string/camera_permission_required"
+            android:textColor="@color/readout"
+            android:textSize="14sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/grantPermissionButton"
+            style="@style/Widget.MaterialComponents.Button"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="20dp"
+            android:backgroundTint="@color/amber"
+            android:fontFamily="monospace"
+            android:text="@string/grant_permission"
+            android:textColor="@android:color/black" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/openSettingsButton"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:fontFamily="monospace"
+            android:text="@string/open_settings"
+            android:textColor="@color/amber"
+            android:visibility="gone" />
+    </LinearLayout>
+
+    <!-- Camera Error / Initializing Overlay -->
+    <LinearLayout
+        android:id="@+id/cameraErrorContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#CC000000"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center"
+        android:orientation="vertical"
+        android:padding="32dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/cameraErrorMessage"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:text="@string/camera_init_error"
+            android:textColor="@color/amber"
+            android:textSize="16sp" />
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/retryCameraButton"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="16dp"
+            android:fontFamily="monospace"
+            android:text="Retry"
+            android:textColor="@color/readout"
+            app:strokeColor="@color/amber" />
     </LinearLayout>
 
 </FrameLayout>

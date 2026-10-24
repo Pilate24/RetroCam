@@ -8,9 +8,11 @@ import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
 import android.graphics.Matrix
+import android.net.Uri
 import android.os.Bundle
 import android.os.Environment
 import android.provider.MediaStore
+import android.provider.Settings
 import android.util.Log
 import android.view.GestureDetector
 import android.view.MotionEvent
@@ -18,22 +20,26 @@ import android.view.ScaleGestureDetector
 import android.view.View
 import android.widget.PopupMenu
 import android.widget.Toast
-import androidx.core.view.isVisible
+import androidx.activity.OnBackPressedCallback
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import androidx.camera.core.Camera
 import androidx.camera.core.CameraSelector
 import androidx.camera.core.FocusMeteringAction
-import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.ImageAnalysis
 import androidx.camera.core.ImageCapture
 import androidx.camera.core.ImageCaptureException
 import androidx.camera.core.ImageProxy
+import androidx.camera.core.Preview
+import androidx.camera.core.SurfaceOrientedMeteringPointFactory
 import androidx.camera.core.resolutionselector.AspectRatioStrategy
 import androidx.camera.core.resolutionselector.ResolutionSelector
 import androidx.camera.lifecycle.ProcessCameraProvider
+import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import androidx.core.view.doOnLayout
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSnapHelper
 import androidx.recyclerview.widget.RecyclerView
@@ -48,6 +54,8 @@ import com.retrocam.app.ui.CompareActivity
 import com.retrocam.app.ui.CompareFrame
 import com.retrocam.app.ui.FilterCarouselAdapter
 import com.retrocam.app.ui.ThumbnailCache
+import com.retrocam.app.video.VideoRecordingManager
+import com.retrocam.app.video.VideoReviewActivity
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -59,8 +67,15 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
+    enum class CameraMode { PHOTO, VIDEO }
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
+    private lateinit var videoRecordingManager: VideoRecordingManager
+
+    private var cameraMode = CameraMode.PHOTO
+    private var cameraSelector = CameraSelector.DEFAULT_BACK_CAMERA
+    private var cameraProvider: ProcessCameraProvider? = null
 
     private var imageCapture: ImageCapture? = null
     private var camera: Camera? = null
@@ -102,6 +117,7 @@ class MainActivity : AppCompatActivity() {
     private var countingDown = false
     private var surpriseMode = false
     private var lastSurpriseId: String? = null
+    private var isPulsing = false
 
     /**
      * The selected preset with the intensity already applied. Written on the main thread whenever
@@ -111,13 +127,33 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     private var activePreset: FilterPreset? = null
 
-    private val requestPermission =
+    private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
             if (granted) {
+                binding.permissionDeniedContainer.visibility = View.GONE
                 startCamera()
             } else {
-                Toast.makeText(this, "Camera permission is required", Toast.LENGTH_LONG).show()
-                finish()
+                showPermissionDenied()
+            }
+        }
+
+    private val requestAudioPermission =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (granted) {
+                videoRecordingManager.startRecording()
+            } else {
+                toast(getString(R.string.mic_permission_denied_notice))
+                videoRecordingManager.startRecording()
+            }
+        }
+
+    private val videoReviewLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            if (result.resultCode == Activity.RESULT_OK) {
+                val retake = result.data?.getBooleanExtra(VideoReviewActivity.EXTRA_RETAKE, false) ?: false
+                if (retake) {
+                    switchToMode(CameraMode.VIDEO)
+                }
             }
         }
 
@@ -127,8 +163,16 @@ class MainActivity : AppCompatActivity() {
         setContentView(binding.root)
 
         cameraExecutor = Executors.newSingleThreadExecutor()
-        binding.shutterButton.setOnClickListener { takePhoto() }
+        videoRecordingManager = VideoRecordingManager(this) { state ->
+            onRecordingStateChanged(state)
+        }
+
+        setUpShutterAndControls()
         setUpTopBar()
+        setUpModeSelector()
+        setUpFlipCamera()
+        setUpPermissionUI()
+
         binding.galleryButton.setOnClickListener {
             startActivity(Intent(this, GalleryActivity::class.java))
         }
@@ -149,13 +193,286 @@ class MainActivity : AppCompatActivity() {
         setUpZoomGestures()
         refreshActivePreset()
 
+        onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
+            override fun handleOnBackPressed() {
+                if (videoRecordingManager.isRecording) {
+                    AlertDialog.Builder(this@MainActivity)
+                        .setTitle("Recording in Progress")
+                        .setMessage("Do you want to stop recording and exit?")
+                        .setPositiveButton("Stop & Exit") { _, _ ->
+                            videoRecordingManager.stopRecording()
+                            finish()
+                        }
+                        .setNegativeButton(R.string.cancel, null)
+                        .show()
+                } else {
+                    isEnabled = false
+                    onBackPressedDispatcher.onBackPressed()
+                }
+            }
+        })
+
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.CAMERA)
             == PackageManager.PERMISSION_GRANTED
         ) {
             startCamera()
         } else {
-            requestPermission.launch(Manifest.permission.CAMERA)
+            requestCameraPermission.launch(Manifest.permission.CAMERA)
         }
+    }
+
+    // --- Mode Selection & Camera Switching ---------------------------------
+
+    private fun setUpModeSelector() {
+        binding.modePhoto.setOnClickListener {
+            if (cameraMode != CameraMode.PHOTO) {
+                switchToMode(CameraMode.PHOTO)
+            }
+        }
+
+        binding.modeVideo.setOnClickListener {
+            if (cameraMode != CameraMode.VIDEO) {
+                switchToMode(CameraMode.VIDEO)
+            }
+        }
+    }
+
+    private fun switchToMode(mode: CameraMode) {
+        if (videoRecordingManager.isRecording) return
+        cameraMode = mode
+
+        if (mode == CameraMode.PHOTO) {
+            binding.modePhoto.setBackgroundResource(R.drawable.mode_pill_selected)
+            binding.modePhoto.setTextColor(Color.BLACK)
+            binding.modePhoto.setTypeface(null, android.graphics.Typeface.BOLD)
+
+            binding.modeVideo.background = null
+            binding.modeVideo.setTextColor(ContextCompat.getColor(this, R.color.readout_dim))
+            binding.modeVideo.setTypeface(null, android.graphics.Typeface.NORMAL)
+
+            binding.shutterButton.setBackgroundResource(R.drawable.shutter_button)
+            binding.shutterButton.contentDescription = getString(R.string.shutter)
+
+            binding.videoPreviewView.visibility = View.GONE
+            binding.viewFinder.visibility = View.VISIBLE
+            binding.filterCarousel.visibility = View.VISIBLE
+            binding.categoryTabs.visibility = View.VISIBLE
+            binding.readoutRow.visibility = View.VISIBLE
+            binding.recordingIndicatorBar.visibility = View.GONE
+            binding.pauseResumeButton.visibility = View.GONE
+            binding.galleryButton.visibility = View.VISIBLE
+
+            binding.topBar.visibility = View.VISIBLE
+        } else {
+            binding.modeVideo.setBackgroundResource(R.drawable.mode_pill_selected)
+            binding.modeVideo.setTextColor(Color.BLACK)
+            binding.modeVideo.setTypeface(null, android.graphics.Typeface.BOLD)
+
+            binding.modePhoto.background = null
+            binding.modePhoto.setTextColor(ContextCompat.getColor(this, R.color.readout_dim))
+            binding.modePhoto.setTypeface(null, android.graphics.Typeface.NORMAL)
+
+            binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
+            binding.shutterButton.contentDescription = getString(R.string.record_video)
+
+            binding.viewFinder.visibility = View.GONE
+            binding.videoPreviewView.visibility = View.VISIBLE
+            binding.filterCarousel.visibility = View.GONE
+            binding.categoryTabs.visibility = View.GONE
+            binding.readoutRow.visibility = View.GONE
+            binding.intensitySlider.visibility = View.GONE
+
+            checkAudioPermissionInfo()
+        }
+
+        startCamera()
+    }
+
+    private fun checkAudioPermissionInfo() {
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            toast(getString(R.string.mic_permission_rationale))
+        }
+    }
+
+    private fun setUpFlipCamera() {
+        binding.flipCameraButton.setOnClickListener {
+            if (videoRecordingManager.isRecording) return@setOnClickListener
+            val provider = cameraProvider ?: return@setOnClickListener
+            val nextSelector = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+                CameraSelector.DEFAULT_FRONT_CAMERA
+            } else {
+                CameraSelector.DEFAULT_BACK_CAMERA
+            }
+
+            if (provider.hasCamera(nextSelector)) {
+                cameraSelector = nextSelector
+                startCamera()
+            } else {
+                toast(getString(R.string.no_camera_available))
+            }
+        }
+    }
+
+    private fun setUpShutterAndControls() {
+        binding.shutterButton.setOnClickListener {
+            if (cameraMode == CameraMode.PHOTO) {
+                takePhoto()
+            } else {
+                handleVideoRecordClick()
+            }
+        }
+
+        binding.pauseResumeButton.setOnClickListener {
+            if (videoRecordingManager.isRecording) {
+                if (videoRecordingManager.isPaused) {
+                    videoRecordingManager.resumeRecording()
+                } else {
+                    videoRecordingManager.pauseRecording()
+                }
+            }
+        }
+    }
+
+    private fun handleVideoRecordClick() {
+        if (videoRecordingManager.isRecording) {
+            videoRecordingManager.stopRecording()
+        } else {
+            if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+                == PackageManager.PERMISSION_GRANTED
+            ) {
+                videoRecordingManager.startRecording()
+            } else {
+                requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
+            }
+        }
+    }
+
+    private fun onRecordingStateChanged(state: VideoRecordingManager.RecordingState) {
+        when (state) {
+            is VideoRecordingManager.RecordingState.Idle -> {
+                binding.recordingIndicatorBar.visibility = View.GONE
+                binding.pauseResumeButton.visibility = View.GONE
+                binding.galleryButton.visibility = View.VISIBLE
+                binding.modeSelector.isEnabled = true
+                binding.modeSelector.alpha = 1f
+                binding.flipCameraButton.isEnabled = true
+                binding.flipCameraButton.alpha = 1f
+                binding.shutterButton.isEnabled = true
+                binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
+                binding.shutterButton.contentDescription = getString(R.string.record_video)
+                setStatus(R.string.status_ready)
+                stopPulsingRecordDot()
+            }
+
+            is VideoRecordingManager.RecordingState.Starting -> {
+                binding.recordingIndicatorBar.visibility = View.VISIBLE
+                binding.recordTimerText.text = "00:00"
+                binding.recordStateText.text = getString(R.string.status_recording)
+                binding.micStatusBadge.visibility = if (!state.audioEnabled) View.VISIBLE else View.GONE
+                binding.pauseResumeButton.visibility = View.VISIBLE
+                binding.pauseResumeButton.setImageResource(R.drawable.ic_pause)
+                binding.pauseResumeButton.contentDescription = getString(R.string.pause_recording)
+                binding.galleryButton.visibility = View.GONE
+                binding.modeSelector.isEnabled = false
+                binding.modeSelector.alpha = 0.4f
+                binding.flipCameraButton.isEnabled = false
+                binding.flipCameraButton.alpha = 0.4f
+                binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_stop)
+                binding.shutterButton.contentDescription = getString(R.string.stop_recording)
+                pulseRecordDot()
+            }
+
+            is VideoRecordingManager.RecordingState.Recording -> {
+                binding.recordingIndicatorBar.visibility = View.VISIBLE
+                binding.recordTimerText.text = formatRecordTime(state.durationSeconds)
+                binding.recordStateText.text = getString(R.string.status_recording)
+                binding.recordStateText.setTextColor(ContextCompat.getColor(this, R.color.record_red))
+                binding.micStatusBadge.visibility = if (!state.audioEnabled) View.VISIBLE else View.GONE
+                binding.pauseResumeButton.visibility = View.VISIBLE
+                binding.pauseResumeButton.setImageResource(R.drawable.ic_pause)
+                binding.pauseResumeButton.contentDescription = getString(R.string.pause_recording)
+                binding.galleryButton.visibility = View.GONE
+                binding.modeSelector.isEnabled = false
+                binding.modeSelector.alpha = 0.4f
+                binding.flipCameraButton.isEnabled = false
+                binding.flipCameraButton.alpha = 0.4f
+                binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_stop)
+                binding.shutterButton.contentDescription = getString(R.string.stop_recording)
+                pulseRecordDot()
+            }
+
+            is VideoRecordingManager.RecordingState.Paused -> {
+                binding.recordTimerText.text = formatRecordTime(state.durationSeconds)
+                binding.recordStateText.text = getString(R.string.status_paused)
+                binding.recordStateText.setTextColor(ContextCompat.getColor(this, R.color.amber))
+                binding.pauseResumeButton.setImageResource(R.drawable.ic_play)
+                binding.pauseResumeButton.contentDescription = getString(R.string.resume_recording)
+                stopPulsingRecordDot()
+            }
+
+            is VideoRecordingManager.RecordingState.Finalizing -> {
+                binding.shutterButton.isEnabled = false
+                setStatus(R.string.status_finalizing)
+            }
+
+            is VideoRecordingManager.RecordingState.Success -> {
+                binding.shutterButton.isEnabled = true
+                onRecordingStateChanged(VideoRecordingManager.RecordingState.Idle)
+                toast(getString(R.string.video_saved_toast))
+                val intent = Intent(this, VideoReviewActivity::class.java).apply {
+                    putExtra(VideoReviewActivity.EXTRA_URI, state.mediaStoreUri)
+                    putExtra(VideoReviewActivity.EXTRA_NAME, state.displayName)
+                    putExtra(VideoReviewActivity.EXTRA_DURATION_MS, state.durationMs)
+                }
+                videoReviewLauncher.launch(intent)
+            }
+
+            is VideoRecordingManager.RecordingState.Error -> {
+                binding.shutterButton.isEnabled = true
+                onRecordingStateChanged(VideoRecordingManager.RecordingState.Idle)
+                toast(state.message)
+            }
+        }
+    }
+
+    private fun formatRecordTime(seconds: Long): String {
+        val minutes = seconds / 60
+        val remainingSeconds = seconds % 60
+        val hours = minutes / 60
+        return if (hours > 0) {
+            String.format(Locale.US, "%02d:%02d:%02d", hours, minutes % 60, remainingSeconds)
+        } else {
+            String.format(Locale.US, "%02d:%02d", minutes, remainingSeconds)
+        }
+    }
+
+    private fun pulseRecordDot() {
+        if (isPulsing) return
+        isPulsing = true
+        binding.recordDot.animate()
+            .alpha(0.2f)
+            .setDuration(500)
+            .withEndAction {
+                if (isPulsing) {
+                    binding.recordDot.animate()
+                        .alpha(1f)
+                        .setDuration(500)
+                        .withEndAction {
+                            isPulsing = false
+                            if (videoRecordingManager.isRecording && !videoRecordingManager.isPaused) {
+                                pulseRecordDot()
+                            }
+                        }.start()
+                }
+            }.start()
+    }
+
+    private fun stopPulsingRecordDot() {
+        isPulsing = false
+        binding.recordDot.animate().cancel()
+        binding.recordDot.alpha = 1f
     }
 
     // --- filter carousel ---------------------------------------------------
@@ -167,10 +484,6 @@ class MainActivity : AppCompatActivity() {
         binding.categoryTabs.adapter = CategoryAdapter(categories) { category -> showCategory(category) }
     }
 
-    /**
-     * Narrows the carousel. The active look is deliberately left alone — changing category is a
-     * browsing action, and having it silently re-grade the viewfinder would be hostile.
-     */
     private fun showCategory(category: String) {
         visiblePresets = if (category == PresetRepository.CATEGORY_ALL) allPresets
         else allPresets.filter { it.category == category }
@@ -195,12 +508,6 @@ class MainActivity : AppCompatActivity() {
         binding.filterCarousel.adapter = adapter
         snapHelper.attachToRecyclerView(binding.filterCarousel)
 
-        // Whatever the user swipes to the centre becomes the active look.
-        //
-        // Only a real drag counts. Laying out the carousel — applying the centring padding below,
-        // or refilling it for a new category — also ends in SCROLL_STATE_IDLE, and treating that
-        // as a selection would silently activate whichever filter happened to land at the centre.
-        // A user scroll always passes through DRAGGING first; a layout settle never does.
         binding.filterCarousel.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(recyclerView: RecyclerView, newState: Int) {
                 if (newState == RecyclerView.SCROLL_STATE_DRAGGING) {
@@ -214,7 +521,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
 
-        // Half-a-viewport of padding at both ends lets the first and last items reach the centre.
         binding.filterCarousel.doOnLayout { view ->
             val itemWidth = resources.getDimensionPixelSize(R.dimen.filter_item_width)
             val padding = ((view.width - itemWidth) / 2).coerceAtLeast(0)
@@ -225,8 +531,6 @@ class MainActivity : AppCompatActivity() {
     private fun centerOn(position: Int) {
         val carousel = binding.filterCarousel
         val layoutManager = carousel.layoutManager as? LinearLayoutManager ?: return
-        // Apply on tap rather than when the scroll animation ends: the filter should change the
-        // instant it's tapped, and the listener now ignores non-drag settles anyway.
         selectPreset(position)
 
         val child = layoutManager.findViewByPosition(position)
@@ -238,18 +542,12 @@ class MainActivity : AppCompatActivity() {
         if (delta != 0) carousel.smoothScrollBy(delta, 0)
     }
 
-    /**
-     * The dial stays out of the way until asked for. It's a secondary control — you pick a look far
-     * more often than you dial its strength — and at 48dp tall it was permanently covering live
-     * image for something most shots never touch.
-     */
     private fun setUpIntensitySlider() {
         binding.intensitySlider.addOnChangeListener { _, value, _ ->
             intensity = value
             refreshActivePreset()
             revealIntensity()
         }
-        // The readout doubles as the handle: tapping the percentage is how you get to change it.
         binding.readoutRow.setOnClickListener {
             if (binding.intensitySlider.isVisible) hideIntensity() else revealIntensity()
         }
@@ -278,7 +576,6 @@ class MainActivity : AppCompatActivity() {
     private fun refreshActivePreset() {
         val base = allPresets.firstOrNull { it.id == selectedPresetId } ?: return
         val scaled = base.scaledBy(intensity)
-        // AUTO leaves the filter's own format alone; anything else is an explicit override.
         activePreset = when (aspect) {
             AspectChoice.AUTO -> scaled
             AspectChoice.FULL -> scaled.copy(aspect = null)
@@ -293,38 +590,108 @@ class MainActivity : AppCompatActivity() {
     private fun startCamera() {
         val providerFuture = ProcessCameraProvider.getInstance(this)
         providerFuture.addListener({
-            val provider = providerFuture.get()
-
-            // Both use cases must agree on aspect ratio, or the preview would compose a different
-            // crop than the photo it claims to be previewing.
-            val resolutionSelector = ResolutionSelector.Builder()
-                .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
-                .build()
-
-            val analysis = ImageAnalysis.Builder()
-                .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
-                .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
-                .setResolutionSelector(resolutionSelector)
-                .build()
-                .also { it.setAnalyzer(cameraExecutor, ::processFrame) }
-
-            val capture = ImageCapture.Builder()
-                .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
-                .setResolutionSelector(resolutionSelector)
-                .build()
-            imageCapture = capture
-
             try {
+                val provider = providerFuture.get()
+                cameraProvider = provider
+
+                // Verify the chosen camera is supported, or fall back to default
+                if (!provider.hasCamera(cameraSelector)) {
+                    val fallback = if (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA) {
+                        CameraSelector.DEFAULT_FRONT_CAMERA
+                    } else {
+                        CameraSelector.DEFAULT_BACK_CAMERA
+                    }
+                    if (provider.hasCamera(fallback)) {
+                        cameraSelector = fallback
+                    } else {
+                        showCameraError(getString(R.string.no_camera_available))
+                        return@addListener
+                    }
+                }
+
                 provider.unbindAll()
-                camera = provider.bindToLifecycle(
-                    this, CameraSelector.DEFAULT_BACK_CAMERA, analysis, capture
-                )
+                hideCameraError()
+
+                if (cameraMode == CameraMode.PHOTO) {
+                    bindPhotoUseCases(provider)
+                } else {
+                    bindVideoUseCases(provider)
+                }
+
                 observeZoom()
                 setStatus(R.string.status_ready)
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
+                showCameraError(getString(R.string.camera_init_error))
             }
         }, ContextCompat.getMainExecutor(this))
+    }
+
+    private fun bindPhotoUseCases(provider: ProcessCameraProvider) {
+        val resolutionSelector = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .build()
+
+        val analysis = ImageAnalysis.Builder()
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setResolutionSelector(resolutionSelector)
+            .build()
+            .also { it.setAnalyzer(cameraExecutor, ::processFrame) }
+
+        val capture = ImageCapture.Builder()
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .setResolutionSelector(resolutionSelector)
+            .build()
+        imageCapture = capture
+
+        camera = provider.bindToLifecycle(
+            this, cameraSelector, analysis, capture
+        )
+    }
+
+    private fun bindVideoUseCases(provider: ProcessCameraProvider) {
+        val preview = Preview.Builder().build().also {
+            it.surfaceProvider = binding.videoPreviewView.surfaceProvider
+        }
+        camera = provider.bindToLifecycle(
+            this, cameraSelector, preview, videoRecordingManager.videoCapture
+        )
+    }
+
+    private fun showCameraError(message: String) {
+        binding.cameraErrorContainer.visibility = View.VISIBLE
+        binding.cameraErrorMessage.text = message
+        binding.retryCameraButton.setOnClickListener {
+            binding.cameraErrorContainer.visibility = View.GONE
+            startCamera()
+        }
+    }
+
+    private fun hideCameraError() {
+        binding.cameraErrorContainer.visibility = View.GONE
+    }
+
+    private fun setUpPermissionUI() {
+        binding.grantPermissionButton.setOnClickListener {
+            binding.permissionDeniedContainer.visibility = View.GONE
+            requestCameraPermission.launch(Manifest.permission.CAMERA)
+        }
+
+        binding.openSettingsButton.setOnClickListener {
+            val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
+                data = Uri.fromParts("package", packageName, null)
+            }
+            startActivity(intent)
+        }
+    }
+
+    private fun showPermissionDenied() {
+        binding.permissionDeniedContainer.visibility = View.VISIBLE
+        val permanentlyDenied = !ActivityCompat.shouldShowRequestPermissionRationale(
+            this, Manifest.permission.CAMERA
+        )
+        binding.openSettingsButton.visibility = if (permanentlyDenied) View.VISIBLE else View.GONE
     }
 
     // --- status chip -------------------------------------------------------
@@ -336,15 +703,14 @@ class MainActivity : AppCompatActivity() {
 
     // --- top bar -----------------------------------------------------------
 
-    /**
-     * AUTO defers to the filter, which is what keeps a Polaroid square and a VHS 4:3 by default.
-     * The other choices override it, so an explicit pick always wins over the look's own format.
-     */
     private enum class AspectChoice(val label: String, val ratio: Float?) {
         AUTO("AUTO", null),
         FULL("FULL", null),
         PORTRAIT_3_4("3:4", 0.75f),
-        SQUARE("1:1", 1f)
+        SQUARE("1:1", 1f),
+        WIDESCREEN("16:9", 16f / 9f),
+        CINEMASCOPE("2:1", 2f),
+        THREETWO("3:2", 3f / 2f)
     }
 
     private enum class FlashChoice(val label: String, val mode: Int, val icon: Int) {
@@ -357,6 +723,10 @@ class MainActivity : AppCompatActivity() {
         binding.flashButton.setOnClickListener {
             flash = FlashChoice.entries[(flash.ordinal + 1) % FlashChoice.entries.size]
             imageCapture?.flashMode = flash.mode
+            if (cameraMode == CameraMode.VIDEO) {
+                // Torch mode for video
+                camera?.cameraControl?.enableTorch(flash == FlashChoice.ON)
+            }
             binding.flashButton.setImageResource(flash.icon)
             binding.flashButton.alpha = if (flash == FlashChoice.OFF) 0.65f else 1f
             toast(getString(R.string.flash_toast, flash.label))
@@ -364,6 +734,10 @@ class MainActivity : AppCompatActivity() {
         binding.flashButton.alpha = 0.65f
 
         binding.timerButton.setOnClickListener {
+            if (cameraMode == CameraMode.VIDEO) {
+                toast("Self-timer is for photo mode")
+                return@setOnClickListener
+            }
             timerSeconds = when (timerSeconds) {
                 0 -> 3
                 3 -> 10
@@ -376,6 +750,10 @@ class MainActivity : AppCompatActivity() {
         binding.timerButton.alpha = 0.65f
 
         binding.aspectButton.setOnClickListener {
+            if (cameraMode == CameraMode.VIDEO) {
+                toast("Video records in standard sensor aspect ratio")
+                return@setOnClickListener
+            }
             aspect = AspectChoice.entries[(aspect.ordinal + 1) % AspectChoice.entries.size]
             binding.aspectButton.text = aspect.label
             refreshActivePreset()
@@ -386,7 +764,6 @@ class MainActivity : AppCompatActivity() {
         binding.overflowButton.setOnClickListener { showOverflow(it) }
     }
 
-    /** Grid, surprise and compare: wanted less often than flash or timer, so one tap deeper. */
     private fun showOverflow(anchor: View) {
         PopupMenu(this, anchor).apply {
             menuInflater.inflate(R.menu.camera_overflow, menu)
@@ -402,6 +779,10 @@ class MainActivity : AppCompatActivity() {
                         true
                     }
                     R.id.menuSurprise -> {
+                        if (cameraMode == CameraMode.VIDEO) {
+                            toast("Surprise mode is for photo mode")
+                            return@setOnMenuItemClickListener true
+                        }
                         surpriseMode = !surpriseMode
                         setStatus(
                             if (surpriseMode) R.string.surprise_status else R.string.status_ready
@@ -414,6 +795,10 @@ class MainActivity : AppCompatActivity() {
                         true
                     }
                     R.id.menuCompare -> {
+                        if (cameraMode == CameraMode.VIDEO) {
+                            toast("Camera compare is for photo mode")
+                            return@setOnMenuItemClickListener true
+                        }
                         openCompare()
                         true
                     }
@@ -431,15 +816,10 @@ class MainActivity : AppCompatActivity() {
             return
         }
         CompareFrame.set(frame)
-        latestFrame = null   // ownership moves to CompareFrame
+        latestFrame = null
         compareLauncher.launch(Intent(this, CompareActivity::class.java))
     }
 
-    /**
-     * A copy of the most recent preview frame, kept so Compare can freeze one instant and grade
-     * every camera against it. Comparing against a live preview would show each tile a different
-     * moment, and the scene change would swamp the difference between renderings.
-     */
     @Volatile
     private var latestFrame: Bitmap? = null
 
@@ -450,7 +830,6 @@ class MainActivity : AppCompatActivity() {
             CompareFrame.clear()
         }
 
-    /** Applies a preset chosen elsewhere, widening the category filter so it is actually visible. */
     private fun applyPresetById(id: String) {
         if (allPresets.none { it.id == id }) return
         selectedPresetId = id
@@ -462,20 +841,11 @@ class MainActivity : AppCompatActivity() {
     private fun toast(message: String) =
         Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
 
-    /**
-     * Surprise mode: the shot is developed with a filter you haven't seen.
-     *
-     * This is the one place the app deliberately breaks its own preview-matches-photo rule. Every
-     * other path goes to some trouble to keep them identical; here not knowing is the feature, the
-     * way a disposable camera doesn't show you anything until it's developed.
-     */
     private fun rollRandomPreset(): FilterPreset? {
         if (allPresets.isEmpty()) return null
-        // Avoid dealing the same look twice running — two identical "surprises" reads as a bug.
         val pool = allPresets.filter { it.id != lastSurpriseId }.ifEmpty { allPresets }
         val picked = pool[Random.nextInt(pool.size)]
         lastSurpriseId = picked.id
-        // Intensity still applies: the slider is the user's, the look is the dice's.
         return picked.scaledBy(intensity).let { scaled ->
             when (aspect) {
                 AspectChoice.AUTO -> scaled
@@ -485,7 +855,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Counts down on screen, then fires the shutter. */
     private fun startCountdown(remaining: Int) {
         if (remaining <= 0) {
             binding.countdownLabel.animate().alpha(0f).setDuration(150).start()
@@ -502,10 +871,6 @@ class MainActivity : AppCompatActivity() {
 
     // --- zoom --------------------------------------------------------------
 
-    /**
-     * Zoom is a camera-level control — CameraX applies it as a sensor crop before either use case
-     * sees a frame — so the preview and the capture zoom together and stay WYSIWYG for free.
-     */
     private fun setUpZoomGestures() {
         val scaleDetector = ScaleGestureDetector(
             this,
@@ -523,7 +888,6 @@ class MainActivity : AppCompatActivity() {
             object : GestureDetector.SimpleOnGestureListener() {
                 override fun onDoubleTap(e: MotionEvent): Boolean {
                     val state = camera?.cameraInfo?.zoomState?.value ?: return false
-                    // Snap back to wide if we're zoomed at all, otherwise jump to 2x.
                     val zoomedIn = state.zoomRatio > state.minZoomRatio * 1.1f
                     applyZoom(
                         if (zoomedIn) state.minZoomRatio
@@ -532,29 +896,30 @@ class MainActivity : AppCompatActivity() {
                     return true
                 }
 
-                // Confirmed, not onSingleTapUp: otherwise the first tap of a double-tap zoom
-                // would also fire a focus request at the same point.
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                    focusAt(e.x, e.y)
+                    if (cameraMode == CameraMode.PHOTO) {
+                        focusAt(e.x, e.y)
+                    } else {
+                        focusAtVideo(e.x, e.y)
+                    }
                     return true
                 }
             }
         )
 
-        binding.viewFinder.setOnTouchListener { view, event ->
+        val touchListener = View.OnTouchListener { view, event ->
             scaleDetector.onTouchEvent(event)
             tapDetector.onTouchEvent(event)
             if (event.actionMasked == MotionEvent.ACTION_UP) view.performClick()
             true
         }
+
+        binding.viewFinder.setOnTouchListener(touchListener)
+        binding.videoPreviewView.setOnTouchListener(touchListener)
     }
 
     // --- tap to focus ------------------------------------------------------
 
-    /**
-     * Everything needed to turn a screen tap back into a sensor coordinate. Recorded on the camera
-     * thread as each frame is drawn, read on the main thread when a tap lands.
-     */
     private class PreviewGeometry(
         val destLeft: Float,
         val destTop: Float,
@@ -568,32 +933,23 @@ class MainActivity : AppCompatActivity() {
     @Volatile
     private var previewGeometry: PreviewGeometry? = null
 
-    /**
-     * A tap has to be walked back through every transform between the sensor and the screen:
-     * letterbox -> frame border -> aspect crop -> the rotation applied before filtering. Skipping
-     * any step focuses on the wrong part of the scene, and worst at the edges where people tap.
-     */
     private fun focusAt(viewX: Float, viewY: Float) {
         val camera = this.camera ?: return
         val geometry = previewGeometry ?: return
         val layout = geometry.layout
 
-        // Undo the letterbox: view pixels -> composed image pixels.
         val composedX = (viewX - geometry.destLeft) / geometry.scale
         val composedY = (viewY - geometry.destTop) / geometry.scale
 
-        // Undo the border. Taps on the border or the letterbox aren't on the picture at all.
         val pictureX = composedX - layout.borderLeft
         val pictureY = composedY - layout.borderTop
         if (pictureX < 0f || pictureY < 0f ||
             pictureX > layout.cropWidth || pictureY > layout.cropHeight
         ) return
 
-        // Undo the crop, then normalise against the upright frame.
         val u = (pictureX + layout.cropLeft) / geometry.frameWidth
         val v = (pictureY + layout.cropTop) / geometry.frameHeight
 
-        // Undo the rotation that made the buffer upright, back into sensor buffer space.
         val bufferU: Float
         val bufferV: Float
         when (geometry.rotationDegrees) {
@@ -614,14 +970,32 @@ class MainActivity : AppCompatActivity() {
             Log.w(TAG, "Focus point rejected", e)
             return
         }
-        // Driven by the actual focus result rather than a fixed delay, so the chip doesn't claim
-        // "Ready" while the lens is still hunting.
         setStatus(R.string.status_focusing)
         focusing.addListener(
             { setStatus(R.string.status_ready) },
             ContextCompat.getMainExecutor(this)
         )
         showFocusRing(viewX, viewY)
+    }
+
+    private fun focusAtVideo(viewX: Float, viewY: Float) {
+        val camera = this.camera ?: return
+        val point = binding.videoPreviewView.meteringPointFactory.createPoint(viewX, viewY)
+        val action = FocusMeteringAction.Builder(
+            point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
+        ).setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS).build()
+
+        try {
+            val focusing = camera.cameraControl.startFocusAndMetering(action)
+            setStatus(R.string.status_focusing)
+            focusing.addListener(
+                { setStatus(R.string.status_ready) },
+                ContextCompat.getMainExecutor(this)
+            )
+            showFocusRing(viewX, viewY)
+        } catch (e: Exception) {
+            Log.w(TAG, "Video focus rejected", e)
+        }
     }
 
     private fun showFocusRing(viewX: Float, viewY: Float) {
@@ -655,7 +1029,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    /** Show the ratio while the user is zooming, then get out of the way. */
     private fun flashZoomLabel() {
         val label = binding.zoomLabel
         label.removeCallbacks(hideZoomLabel)
@@ -687,8 +1060,6 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
-        // Refresh the thumbnails' source scene occasionally. Rebuilding them is the expensive part
-        // (one render per preset), so this is minutes-scale, not per-frame.
         val now = System.nanoTime()
         if (now - lastThumbnailSourceNanos > THUMBNAIL_REFRESH_NANOS) {
             lastThumbnailSourceNanos = now
@@ -696,8 +1067,6 @@ class MainActivity : AppCompatActivity() {
             runOnUiThread { carouselAdapter?.refreshThumbnails() }
         }
 
-        // Keep one recent frame for Compare. Downscaled here so the copy is cheap and the compare
-        // grid isn't re-scaling a full preview frame per tile.
         if (now - lastCompareFrameNanos > COMPARE_FRAME_NANOS) {
             lastCompareFrameNanos = now
             val previous = latestFrame
@@ -711,7 +1080,6 @@ class MainActivity : AppCompatActivity() {
         }
 
         val elapsedSeconds = (now - startTimeNanos) / 1_000_000_000f
-        // A frame that fails to render is dropped: the preview stutters, but the app stays alive.
         val filtered = try {
             renderer.render(rotated, elapsedSeconds, preset)
         } catch (e: RuntimeException) {
@@ -719,7 +1087,6 @@ class MainActivity : AppCompatActivity() {
             return
         }
 
-        // Same compositor the capture uses, so the crop, border and stamp you see are the real ones.
         previewDate.time = System.currentTimeMillis()
         val composed = OverlayCompositor.compose(filtered, preset, previewDate)
         drawToSurface(
@@ -735,11 +1102,6 @@ class MainActivity : AppCompatActivity() {
         reportFrameRate(now, rotated.width, rotated.height)
     }
 
-    /**
-     * Periodic throughput log. The filter pipeline is the easiest thing in this app to make slow
-     * without noticing, so it reports what it is actually achieving rather than leaving it to be
-     * guessed at from how the preview feels.
-     */
     private fun reportFrameRate(nowNanos: Long, frameWidth: Int, frameHeight: Int) {
         framesSinceReport++
         if (fpsWindowStartNanos == 0L) {
@@ -765,8 +1127,6 @@ class MainActivity : AppCompatActivity() {
         rotationDegrees: Int
     ) {
         val holder = binding.viewFinder.holder
-        // Frames arrive on the camera thread, so the surface can be torn down mid-draw when the
-        // activity goes away. Check first, and still guard the lock against losing that race.
         if (!holder.surface.isValid) return
         val canvas = try {
             holder.lockHardwareCanvas()
@@ -780,8 +1140,6 @@ class MainActivity : AppCompatActivity() {
             val viewHeight = binding.viewFinder.height.toFloat()
             if (viewWidth == 0f || viewHeight == 0f) return
 
-            // Fit, not fill: letterboxing shows the whole composed frame. Filling would crop the
-            // Polaroid border and the frame edges off the preview while the saved photo keeps them.
             val scale = minOf(viewWidth / bitmap.width, viewHeight / bitmap.height)
             val dx = (viewWidth - bitmap.width * scale) / 2f
             val dy = (viewHeight - bitmap.height * scale) / 2f
@@ -789,8 +1147,6 @@ class MainActivity : AppCompatActivity() {
             previewMatrix.postTranslate(dx, dy)
             canvas.drawBitmap(bitmap, previewMatrix, null)
 
-            // Recorded here rather than computed on tap: this is the transform actually used to
-            // put pixels on screen, so focus can invert exactly what the user is looking at.
             previewGeometry = PreviewGeometry(
                 destLeft = dx,
                 destTop = dy,
@@ -833,8 +1189,6 @@ class MainActivity : AppCompatActivity() {
         binding.shutterButton.isEnabled = true
 
         val capture = imageCapture ?: return
-        // Rolled once here, then carried all the way through to saving, so the toast and the
-        // filename always name the filter the photo was actually developed with.
         val preset = (if (surpriseMode) rollRandomPreset() else activePreset) ?: return
         setStatus(R.string.status_saving)
 
@@ -843,7 +1197,6 @@ class MainActivity : AppCompatActivity() {
                 val rotated = rotateBitmap(image.toBitmap(), image.imageInfo.rotationDegrees)
                 image.close()
 
-                // A fresh seed per shot so two photos never share an identical grain pattern.
                 val renderer = ShaderRenderer(rotated.width, rotated.height)
                 val filtered = try {
                     renderer.render(rotated, Random.nextFloat() * 100f, preset)
@@ -885,16 +1238,24 @@ class MainActivity : AppCompatActivity() {
         }
 
         runOnUiThread {
-            // Name the roll. A surprise you can identify is worth keeping; an unexplained one just
-            // looks like the app ignored the filter you picked.
             if (revealName) toast(getString(R.string.surprise_result, preset.name))
             else Toast.makeText(this, R.string.saved_toast, Toast.LENGTH_SHORT).show()
             setStatus(if (surpriseMode) R.string.surprise_status else R.string.status_ready)
         }
     }
 
+    override fun onStop() {
+        super.onStop()
+        if (::videoRecordingManager.isInitialized && videoRecordingManager.isRecording) {
+            videoRecordingManager.stopRecording()
+        }
+    }
+
     override fun onDestroy() {
         super.onDestroy()
+        if (::videoRecordingManager.isInitialized) {
+            videoRecordingManager.release()
+        }
         previewRenderer?.close()
         thumbnails?.close()
         cameraExecutor.shutdown()

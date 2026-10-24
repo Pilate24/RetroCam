@@ -6,6 +6,7 @@ import android.view.View
 import androidx.appcompat.app.AppCompatActivity
 import androidx.recyclerview.widget.GridLayoutManager
 import com.retrocam.app.databinding.ActivityGalleryBinding
+import com.retrocam.app.video.VideoReviewActivity
 import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
@@ -24,20 +25,29 @@ class GalleryActivity : AppCompatActivity() {
         binding.photoGrid.layoutManager = GridLayoutManager(this, COLUMNS)
     }
 
-    /** Reloaded on resume so a shot taken since the last visit shows up. */
+    /** Reloaded on resume so a shot or video taken since the last visit shows up. */
     override fun onResume() {
         super.onResume()
-        val photos = PhotoStore.query(contentResolver)
+        val mediaItems = PhotoStore.query(contentResolver)
 
-        binding.emptyState.visibility = if (photos.isEmpty()) View.VISIBLE else View.GONE
+        binding.emptyState.visibility = if (mediaItems.isEmpty()) View.VISIBLE else View.GONE
         binding.photoGrid.adapter = PhotoGridAdapter(
-            photos, contentResolver, thumbnailExecutor
-        ) { photo ->
-            startActivity(
-                Intent(this, ViewerActivity::class.java)
-                    .putExtra(ViewerActivity.EXTRA_URI, photo.uri)
-                    .putExtra(ViewerActivity.EXTRA_NAME, photo.name)
-            )
+            mediaItems, contentResolver, thumbnailExecutor
+        ) { item ->
+            if (item.isVideo) {
+                startActivity(
+                    Intent(this, VideoReviewActivity::class.java)
+                        .putExtra(VideoReviewActivity.EXTRA_URI, item.uri)
+                        .putExtra(VideoReviewActivity.EXTRA_NAME, item.name)
+                        .putExtra(VideoReviewActivity.EXTRA_DURATION_MS, item.durationMs)
+                )
+            } else {
+                startActivity(
+                    Intent(this, ViewerActivity::class.java)
+                        .putExtra(ViewerActivity.EXTRA_URI, item.uri)
+                        .putExtra(ViewerActivity.EXTRA_NAME, item.name)
+                )
+            }
         }
     }
 

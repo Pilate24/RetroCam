@@ -5,15 +5,18 @@ import android.graphics.Bitmap
 import android.util.LruCache
 import android.util.Size
 import android.view.LayoutInflater
+import android.view.View
 import android.view.ViewGroup
 import android.widget.ImageView
+import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.RecyclerView
 import com.retrocam.app.R
+import java.util.Locale
 import java.util.concurrent.ExecutorService
 
 /**
- * Grid of thumbnails. Decoding happens on [executor] and results are cached, because MediaStore's
- * thumbnail call hits disk and would jank the scroll if run inline.
+ * Grid of thumbnails for both photos and videos. Decoding happens on [executor] and results are cached.
  */
 class PhotoGridAdapter(
     private val photos: List<Photo>,
@@ -24,11 +27,14 @@ class PhotoGridAdapter(
 
     private val cache = object : LruCache<Long, Bitmap>(CACHE_ENTRIES) {}
 
-    class Holder(val image: ImageView) : RecyclerView.ViewHolder(image)
+    class Holder(view: View) : RecyclerView.ViewHolder(view) {
+        val image: ImageView = view.findViewById(R.id.photoThumb)
+        val videoBadge: TextView = view.findViewById(R.id.videoBadge)
+    }
 
     override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): Holder {
         val view = LayoutInflater.from(parent.context)
-            .inflate(R.layout.item_photo, parent, false) as ImageView
+            .inflate(R.layout.item_photo, parent, false)
         return Holder(view)
     }
 
@@ -36,7 +42,15 @@ class PhotoGridAdapter(
 
     override fun onBindViewHolder(holder: Holder, position: Int) {
         val photo = photos[position]
-        holder.image.setOnClickListener { onClick(photo) }
+        holder.itemView.setOnClickListener { onClick(photo) }
+
+        if (photo.isVideo) {
+            holder.videoBadge.isVisible = true
+            val totalSec = (photo.durationMs / 1000).coerceAtLeast(0)
+            holder.videoBadge.text = String.format(Locale.US, "▶ %02d:%02d", totalSec / 60, totalSec % 60)
+        } else {
+            holder.videoBadge.isVisible = false
+        }
 
         // Views are recycled, so tag the target and drop results that arrive after a rebind.
         holder.image.tag = photo.id

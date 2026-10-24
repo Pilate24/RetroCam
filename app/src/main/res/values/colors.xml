@@ -17,4 +17,8 @@
 
     <color name="shutter_ring">#FFF2E4CE</color>
     <color name="frame_line">#40F2E4CE</color>
+
+    <!-- Recording Indicator -->
+    <color name="record_red">#FFE53935</color>
+    <color name="record_red_dim">#80E53935</color>
 </resources>

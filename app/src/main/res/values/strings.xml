@@ -34,4 +34,48 @@
     <string name="surprise_off">Surprise mode off</string>
     <string name="surprise_status">Surprise</string>
     <string name="surprise_result">Developed as %1$s</string>
+
+    <!-- Video Recording -->
+    <string name="mode_photo">PHOTO</string>
+    <string name="mode_video">VIDEO</string>
+    <string name="record_video">Record video</string>
+    <string name="stop_recording">Stop recording</string>
+    <string name="pause_recording">Pause recording</string>
+    <string name="resume_recording">Resume recording</string>
+    <string name="switch_camera">Switch camera</string>
+    <string name="status_recording">REC</string>
+    <string name="status_paused">PAUSED</string>
+    <string name="status_finalizing">Saving video…</string>
+    <string name="audio_muted_badge">Muted (No Mic)</string>
+    <string name="audio_recording_enabled">Audio enabled</string>
+
+    <!-- Permissions -->
+    <string name="camera_permission_required">Camera permission is required to use RetroCam.</string>
+    <string name="mic_permission_rationale">Microphone access is needed to record audio with your videos. Without it, videos will be recorded silently.</string>
+    <string name="mic_permission_denied_notice">Recording video without audio (microphone access denied)</string>
+    <string name="permission_denied_title">Permissions Required</string>
+    <string name="permission_denied_message">Camera access is required. Please grant permission in application settings.</string>
+    <string name="grant_permission">Grant Permission</string>
+    <string name="open_settings">Open Settings</string>
+
+    <!-- Review & Management -->
+    <string name="video_saved_toast">Saved to Movies/RetroCam</string>
+    <string name="video_review_title">Review Recording</string>
+    <string name="retake_button">Retake</string>
+    <string name="delete_button">Delete</string>
+    <string name="discard_button">Discard</string>
+    <string name="share_video">Share video</string>
+    <string name="delete_confirm_title">Delete Saved Video?</string>
+    <string name="delete_confirm_message">Permanently delete this video from device storage? This cannot be undone.</string>
+    <string name="delete_confirm_action">Delete</string>
+    <string name="discard_confirm_title">Discard Recording?</string>
+    <string name="discard_confirm_message">Discard this recording and return to camera?</string>
+    <string name="discard_confirm_action">Discard</string>
+    <string name="cancel">Cancel</string>
+    <string name="saved_status_badge">Saved in Movies/RetroCam</string>
+    <string name="camera_init_error">Camera failed to initialize. Tap to retry.</string>
+    <string name="no_camera_available">No camera available on this device.</string>
+    <string name="play">Play</string>
+    <string name="pause">Pause</string>
+    <string name="video">Video</string>
 </resources>
