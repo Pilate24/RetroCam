@@ -139,12 +139,10 @@ class MainActivity : AppCompatActivity() {
 
     private val requestAudioPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                videoRecordingManager.startRecording()
-            } else {
+            if (!granted) {
                 toast(getString(R.string.mic_permission_denied_notice))
-                videoRecordingManager.startRecording()
             }
+            startVideoRecording()
         }
 
     private val videoReviewLauncher =
@@ -275,12 +273,15 @@ class MainActivity : AppCompatActivity() {
             binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
             binding.shutterButton.contentDescription = getString(R.string.record_video)
 
-            binding.viewFinder.visibility = View.GONE
-            binding.videoPreviewView.visibility = View.VISIBLE
-            binding.filterCarousel.visibility = View.GONE
-            binding.categoryTabs.visibility = View.GONE
-            binding.readoutRow.visibility = View.GONE
-            binding.intensitySlider.visibility = View.GONE
+            binding.videoPreviewView.visibility = View.GONE
+            binding.viewFinder.visibility = View.VISIBLE
+            binding.filterCarousel.visibility = View.VISIBLE
+            binding.categoryTabs.visibility = View.VISIBLE
+            binding.readoutRow.visibility = View.VISIBLE
+            binding.recordingIndicatorBar.visibility = View.GONE
+            binding.pauseResumeButton.visibility = View.GONE
+            binding.galleryButton.visibility = View.VISIBLE
+            binding.topBar.visibility = View.VISIBLE
 
             checkAudioPermissionInfo()
         }
@@ -335,6 +336,15 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    private var latestComposedWidth = 720
+    private var latestComposedHeight = 1280
+
+    private fun startVideoRecording() {
+        val width = latestComposedWidth.takeIf { it > 0 } ?: 720
+        val height = latestComposedHeight.takeIf { it > 0 } ?: 1280
+        videoRecordingManager.startRecording(width, height)
+    }
+
     private fun handleVideoRecordClick() {
         if (videoRecordingManager.isRecording) {
             videoRecordingManager.stopRecording()
@@ -342,7 +352,7 @@ class MainActivity : AppCompatActivity() {
             if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
                 == PackageManager.PERMISSION_GRANTED
             ) {
-                videoRecordingManager.startRecording()
+                startVideoRecording()
             } else {
                 requestAudioPermission.launch(Manifest.permission.RECORD_AUDIO)
             }
@@ -359,6 +369,10 @@ class MainActivity : AppCompatActivity() {
                 binding.modeSelector.alpha = 1f
                 binding.flipCameraButton.isEnabled = true
                 binding.flipCameraButton.alpha = 1f
+                binding.filterCarousel.isEnabled = true
+                binding.filterCarousel.alpha = 1f
+                binding.categoryTabs.isEnabled = true
+                binding.categoryTabs.alpha = 1f
                 binding.shutterButton.isEnabled = true
                 binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
                 binding.shutterButton.contentDescription = getString(R.string.record_video)
@@ -379,6 +393,11 @@ class MainActivity : AppCompatActivity() {
                 binding.modeSelector.alpha = 0.4f
                 binding.flipCameraButton.isEnabled = false
                 binding.flipCameraButton.alpha = 0.4f
+                binding.filterCarousel.isEnabled = false
+                binding.filterCarousel.alpha = 0.4f
+                binding.categoryTabs.isEnabled = false
+                binding.categoryTabs.alpha = 0.4f
+                binding.intensitySlider.visibility = View.GONE
                 binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_stop)
                 binding.shutterButton.contentDescription = getString(R.string.stop_recording)
                 pulseRecordDot()
@@ -398,6 +417,11 @@ class MainActivity : AppCompatActivity() {
                 binding.modeSelector.alpha = 0.4f
                 binding.flipCameraButton.isEnabled = false
                 binding.flipCameraButton.alpha = 0.4f
+                binding.filterCarousel.isEnabled = false
+                binding.filterCarousel.alpha = 0.4f
+                binding.categoryTabs.isEnabled = false
+                binding.categoryTabs.alpha = 0.4f
+                binding.intensitySlider.visibility = View.GONE
                 binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_stop)
                 binding.shutterButton.contentDescription = getString(R.string.stop_recording)
                 pulseRecordDot()
@@ -651,11 +675,19 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun bindVideoUseCases(provider: ProcessCameraProvider) {
-        val preview = Preview.Builder().build().also {
-            it.surfaceProvider = binding.videoPreviewView.surfaceProvider
-        }
+        val resolutionSelector = ResolutionSelector.Builder()
+            .setAspectRatioStrategy(AspectRatioStrategy.RATIO_4_3_FALLBACK_AUTO_STRATEGY)
+            .build()
+
+        val analysis = ImageAnalysis.Builder()
+            .setOutputImageFormat(ImageAnalysis.OUTPUT_IMAGE_FORMAT_RGBA_8888)
+            .setBackpressureStrategy(ImageAnalysis.STRATEGY_KEEP_ONLY_LATEST)
+            .setResolutionSelector(resolutionSelector)
+            .build()
+            .also { it.setAnalyzer(cameraExecutor, ::processFrame) }
+
         camera = provider.bindToLifecycle(
-            this, cameraSelector, preview, videoRecordingManager.videoCapture
+            this, cameraSelector, analysis
         )
     }
 
@@ -897,11 +929,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 override fun onSingleTapConfirmed(e: MotionEvent): Boolean {
-                    if (cameraMode == CameraMode.PHOTO) {
-                        focusAt(e.x, e.y)
-                    } else {
-                        focusAtVideo(e.x, e.y)
-                    }
+                    focusAt(e.x, e.y)
                     return true
                 }
             }
@@ -977,26 +1005,6 @@ class MainActivity : AppCompatActivity() {
             ContextCompat.getMainExecutor(this)
         )
         showFocusRing(viewX, viewY)
-    }
-
-    private fun focusAtVideo(viewX: Float, viewY: Float) {
-        val camera = this.camera ?: return
-        val point = binding.videoPreviewView.meteringPointFactory.createPoint(viewX, viewY)
-        val action = FocusMeteringAction.Builder(
-            point, FocusMeteringAction.FLAG_AF or FocusMeteringAction.FLAG_AE
-        ).setAutoCancelDuration(FOCUS_HOLD_SECONDS, TimeUnit.SECONDS).build()
-
-        try {
-            val focusing = camera.cameraControl.startFocusAndMetering(action)
-            setStatus(R.string.status_focusing)
-            focusing.addListener(
-                { setStatus(R.string.status_ready) },
-                ContextCompat.getMainExecutor(this)
-            )
-            showFocusRing(viewX, viewY)
-        } catch (e: Exception) {
-            Log.w(TAG, "Video focus rejected", e)
-        }
     }
 
     private fun showFocusRing(viewX: Float, viewY: Float) {
@@ -1090,6 +1098,9 @@ class MainActivity : AppCompatActivity() {
 
         previewDate.time = System.currentTimeMillis()
         val composed = OverlayCompositor.compose(filtered, preset, previewDate)
+        latestComposedWidth = composed.width
+        latestComposedHeight = composed.height
+
         drawToSurface(
             composed,
             OverlayCompositor.layoutFor(rotated.width, rotated.height, preset),
@@ -1097,6 +1108,11 @@ class MainActivity : AppCompatActivity() {
             rotated.height,
             imageRotation
         )
+
+        if (cameraMode == CameraMode.VIDEO && videoRecordingManager.isRecording) {
+            videoRecordingManager.onNewFrame(composed)
+        }
+
         if (composed !== filtered) filtered.recycle()
         composed.recycle()
 

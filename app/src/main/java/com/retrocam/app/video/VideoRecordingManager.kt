@@ -1,21 +1,13 @@
 package com.retrocam.app.video
 
 import android.Manifest
-import android.annotation.SuppressLint
 import android.content.Context
 import android.content.pm.PackageManager
+import android.graphics.Bitmap
 import android.net.Uri
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
-import androidx.camera.video.FallbackStrategy
-import androidx.camera.video.FileOutputOptions
-import androidx.camera.video.Quality
-import androidx.camera.video.QualitySelector
-import androidx.camera.video.Recorder
-import androidx.camera.video.Recording
-import androidx.camera.video.VideoCapture
-import androidx.camera.video.VideoRecordEvent
 import androidx.core.content.ContextCompat
 import java.io.File
 import java.text.SimpleDateFormat
@@ -25,7 +17,8 @@ import java.util.concurrent.ExecutorService
 import java.util.concurrent.Executors
 
 /**
- * Manages CameraX VideoCapture, active Recording sessions, recording timers, and MediaStore export.
+ * Manages video recording sessions, real-time filtered frame ingestion, recording state machine,
+ * recording timers, and atomic MediaStore export to Movies/RetroCam.
  */
 class VideoRecordingManager(
     private val context: Context,
@@ -45,9 +38,7 @@ class VideoRecordingManager(
     private val mainHandler = Handler(Looper.getMainLooper())
     private val ioExecutor: ExecutorService = Executors.newSingleThreadExecutor()
 
-    val videoCapture: VideoCapture<Recorder>
-
-    private var activeRecording: Recording? = null
+    private var activeRecorder: FilteredVideoRecorder? = null
     private var currentTempFile: File? = null
     private var currentDisplayName: String = ""
     private var audioEnabledForCurrent: Boolean = false
@@ -59,25 +50,14 @@ class VideoRecordingManager(
         private set
 
     init {
-        val recorder = Recorder.Builder()
-            .setQualitySelector(
-                QualitySelector.from(
-                    Quality.HIGHEST,
-                    FallbackStrategy.higherQualityOrLowerThan(Quality.SD)
-                )
-            )
-            .build()
-        videoCapture = VideoCapture.withOutput(recorder)
         cleanTempDirectory()
     }
 
     /**
-     * Starts video recording to a staging file in context.cacheDir/videos.
-     * Records audio if RECORD_AUDIO permission is granted; records silent video otherwise.
+     * Starts recording filtered video. Width and height are aligned to even values for encoder compatibility.
      */
-    @SuppressLint("MissingPermission")
-    fun startRecording() {
-        if (activeRecording != null || isRecording) {
+    fun startRecording(rawWidth: Int, rawHeight: Int) {
+        if (activeRecorder != null || isRecording) {
             Log.w(TAG, "Recording already in progress, ignoring start request")
             return
         }
@@ -95,47 +75,67 @@ class VideoRecordingManager(
         val tempFile = File(videoDir, "staging_$currentDisplayName")
         currentTempFile = tempFile
 
-        val outputOptions = FileOutputOptions.Builder(tempFile).build()
-        val pending = videoCapture.output.prepareRecording(context, outputOptions)
-
-        if (hasAudioPermission) {
-            try {
-                pending.withAudioEnabled()
-            } catch (e: SecurityException) {
-                Log.w(TAG, "Microphone permission revoked between check and start", e)
-                audioEnabledForCurrent = false
-            }
-        }
+        // Even dimensions required for H.264
+        val encWidth = (rawWidth / 2) * 2
+        val encHeight = (rawHeight / 2) * 2
 
         onStateChanged(RecordingState.Starting(audioEnabledForCurrent))
 
         try {
-            activeRecording = pending.start(ContextCompat.getMainExecutor(context)) { event ->
-                handleRecordEvent(event)
-            }
+            val recorder = FilteredVideoRecorder(
+                outputFile = tempFile,
+                width = encWidth,
+                height = encHeight,
+                audioEnabled = audioEnabledForCurrent,
+                onDurationUpdate = { durationMs ->
+                    recordedDurationMs = durationMs
+                    val seconds = durationMs / 1000L
+                    mainHandler.post {
+                        if (isRecording && !isPaused) {
+                            onStateChanged(RecordingState.Recording(seconds, audioEnabledForCurrent))
+                        }
+                    }
+                },
+                onError = { message, throwable ->
+                    mainHandler.post {
+                        onRecordingError(message, throwable)
+                    }
+                }
+            )
+
+            recorder.start()
+            activeRecorder = recorder
             isRecording = true
             isPaused = false
+            onStateChanged(RecordingState.Recording(0L, audioEnabledForCurrent))
         } catch (e: Exception) {
             Log.e(TAG, "Failed to start recording session", e)
             isRecording = false
             isPaused = false
-            activeRecording = null
+            activeRecorder = null
             tempFile.delete()
             onStateChanged(RecordingState.Error("Failed to start recording: ${e.message}", e))
         }
     }
 
     /**
-     * Pauses the active recording session if supported.
+     * Enqueues a filtered bitmap frame to the active video recorder.
+     */
+    fun onNewFrame(bitmap: Bitmap) {
+        if (isRecording && !isPaused) {
+            activeRecorder?.encodeFrame(bitmap)
+        }
+    }
+
+    /**
+     * Pauses the active recording session.
      */
     fun pauseRecording() {
-        val recording = activeRecording ?: return
         if (isRecording && !isPaused) {
-            try {
-                recording.pause()
-            } catch (e: Exception) {
-                Log.w(TAG, "Pause failed", e)
-            }
+            isPaused = true
+            activeRecorder?.pause()
+            val seconds = recordedDurationMs / 1000L
+            onStateChanged(RecordingState.Paused(seconds, audioEnabledForCurrent))
         }
     }
 
@@ -143,110 +143,77 @@ class VideoRecordingManager(
      * Resumes the paused recording session.
      */
     fun resumeRecording() {
-        val recording = activeRecording ?: return
         if (isRecording && isPaused) {
-            try {
-                recording.resume()
-            } catch (e: Exception) {
-                Log.w(TAG, "Resume failed", e)
-            }
+            isPaused = false
+            activeRecorder?.resume()
+            val seconds = recordedDurationMs / 1000L
+            onStateChanged(RecordingState.Recording(seconds, audioEnabledForCurrent))
         }
     }
 
     /**
-     * Stops the active recording session. Output will be processed in Finalize event.
+     * Stops the active recording session and publishes output to MediaStore.
      */
     fun stopRecording() {
-        val recording = activeRecording ?: return
+        val recorder = activeRecorder ?: return
         isRecording = false
         isPaused = false
+        activeRecorder = null
         onStateChanged(RecordingState.Finalizing)
-        try {
-            recording.stop()
-        } catch (e: Exception) {
-            Log.e(TAG, "Stop recording failed", e)
-            onStateChanged(RecordingState.Error("Failed to stop recording: ${e.message}", e))
+
+        ioExecutor.execute {
+            try {
+                val finalDurationMs = recorder.stop()
+                val durationMs = if (finalDurationMs > 0) finalDurationMs else recordedDurationMs
+
+                val file = currentTempFile
+                val displayName = currentDisplayName
+
+                if (file == null || !file.exists() || file.length() == 0L) {
+                    Log.e(TAG, "Recording finalized but output file is missing or empty")
+                    mainHandler.post {
+                        onStateChanged(RecordingState.Error("Recorded file is empty or corrupted"))
+                    }
+                    return@execute
+                }
+
+                val uri = VideoStore.saveToMediaStore(
+                    context.contentResolver,
+                    file,
+                    displayName,
+                    durationMs
+                )
+                file.delete()
+                currentTempFile = null
+
+                mainHandler.post {
+                    if (uri != null) {
+                        onStateChanged(
+                            RecordingState.Success(uri, displayName, durationMs)
+                        )
+                    } else {
+                        onStateChanged(
+                            RecordingState.Error("Failed to save recording to gallery")
+                        )
+                    }
+                }
+            } catch (e: Exception) {
+                Log.e(TAG, "Error finalizing recording", e)
+                mainHandler.post {
+                    onStateChanged(RecordingState.Error("Failed to finalize video: ${e.message}", e))
+                }
+            }
         }
     }
 
-    private fun handleRecordEvent(event: VideoRecordEvent) {
-        when (event) {
-            is VideoRecordEvent.Start -> {
-                isRecording = true
-                isPaused = false
-                onStateChanged(RecordingState.Recording(0L, audioEnabledForCurrent))
-            }
-
-            is VideoRecordEvent.Status -> {
-                val durationNanos = event.recordingStats.recordedDurationNanos
-                val seconds = durationNanos / 1_000_000_000L
-                recordedDurationMs = durationNanos / 1_000_000L
-                if (!isPaused) {
-                    onStateChanged(RecordingState.Recording(seconds, audioEnabledForCurrent))
-                }
-            }
-
-            is VideoRecordEvent.Pause -> {
-                isPaused = true
-                val seconds = recordedDurationMs / 1000L
-                onStateChanged(RecordingState.Paused(seconds, audioEnabledForCurrent))
-            }
-
-            is VideoRecordEvent.Resume -> {
-                isPaused = false
-                val seconds = recordedDurationMs / 1000L
-                onStateChanged(RecordingState.Recording(seconds, audioEnabledForCurrent))
-            }
-
-            is VideoRecordEvent.Finalize -> {
-                isRecording = false
-                isPaused = false
-                activeRecording = null
-
-                if (event.hasError()) {
-                    Log.e(TAG, "Recording finalized with error code: ${event.error}", event.cause)
-                    currentTempFile?.delete()
-                    currentTempFile = null
-                    onStateChanged(
-                        RecordingState.Error("Recording error (${event.error})", event.cause)
-                    )
-                } else {
-                    val file = currentTempFile
-                    val displayName = currentDisplayName
-                    val durationMs = recordedDurationMs
-
-                    if (file == null || !file.exists() || file.length() == 0L) {
-                        Log.e(TAG, "Recording finalized but output file is missing or empty")
-                        onStateChanged(RecordingState.Error("Recorded file is empty or corrupted"))
-                        return
-                    }
-
-                    // Save to MediaStore Movies/RetroCam on background thread
-                    ioExecutor.execute {
-                        val uri = VideoStore.saveToMediaStore(
-                            context.contentResolver,
-                            file,
-                            displayName,
-                            durationMs
-                        )
-                        file.delete()
-                        currentTempFile = null
-
-                        mainHandler.post {
-                            if (uri != null) {
-                                onStateChanged(
-                                    RecordingState.Success(uri, displayName, durationMs)
-                                )
-                            } else {
-                                onStateChanged(
-                                    RecordingState.Error("Failed to save recording to gallery")
-                                )
-                            }
-                        }
-                    }
-                }
-            }
-        }
+    private fun onRecordingError(message: String, throwable: Throwable?) {
+        isRecording = false
+        isPaused = false
+        activeRecorder?.release()
+        activeRecorder = null
+        currentTempFile?.delete()
+        currentTempFile = null
+        onStateChanged(RecordingState.Error(message, throwable))
     }
 
     /**
@@ -269,13 +236,12 @@ class VideoRecordingManager(
         }
     }
 
-    /**
-     * Call when leaving the screen or activity onDestroy.
-     */
     fun release() {
         if (isRecording) {
             stopRecording()
         }
+        activeRecorder?.release()
+        activeRecorder = null
         ioExecutor.shutdown()
     }
 
