@@ -91,4 +91,9 @@
     <string name="pro_macro">Macro</string>
     <string name="pro_infinity">Infinity</string>
     <string name="pro_auto_all">AUTO ALL</string>
+    <!-- AI Photo Remaster -->
+    <string name="remaster_title">AI Photo Remaster</string>
+    <string name="remaster_auto">Auto Remaster</string>
+    <string name="remaster_saved">Remastered photo saved to Pictures/RetroCam</string>
+    <string name="remaster_replace_confirm">This will permanently overwrite the original photo with the remastered version. Are you sure?</string>
 </resources>

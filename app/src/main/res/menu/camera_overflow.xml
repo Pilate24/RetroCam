@@ -1,6 +1,10 @@
 <?xml version="1.0" encoding="utf-8"?>
 <menu xmlns:android="http://schemas.android.com/apk/res/android">
     <item
+        android:id="@+id/menuDirector"
+        android:checkable="true"
+        android:title="AI Shot Director" />
+    <item
         android:id="@+id/menuGrid"
         android:checkable="true"
         android:title="@string/grid" />
@@ -11,4 +15,10 @@
     <item
         android:id="@+id/menuCompare"
         android:title="@string/compare_title" />
+    <item
+        android:id="@+id/menuRemaster"
+        android:title="AI Photo Remaster" />
+    <item
+        android:id="@+id/menuTrips"
+        android:title="Trips &amp; Memories" />
 </menu>

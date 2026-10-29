@@ -1,0 +1,238 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="#FF0B0B0B"
+    android:fitsSystemWindows="true"
+    android:orientation="vertical">
+
+    <!-- Top App Bar -->
+    <FrameLayout
+        android:layout_width="match_parent"
+        android:layout_height="56dp"
+        android:background="#FF121212">
+
+        <ImageButton
+            android:id="@+id/editTripBackButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
+            android:layout_gravity="start|center_vertical"
+            android:layout_marginStart="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/back"
+            android:src="@drawable/ic_back"
+            app:tint="#FFFFFFFF" />
+
+        <TextView
+            android:id="@+id/editTripScreenTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_gravity="center"
+            android:text="New Trip"
+            android:textColor="#FFFFFFFF"
+            android:textSize="17sp"
+            android:textStyle="bold" />
+    </FrameLayout>
+
+    <ScrollView
+        android:layout_width="match_parent"
+        android:layout_height="0dp"
+        android:layout_weight="1"
+        android:fillViewport="true">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:padding="20dp">
+
+            <!-- Cover Photo Selection Preview -->
+            <androidx.cardview.widget.CardView
+                android:layout_width="match_parent"
+                android:layout_height="160dp"
+                app:cardBackgroundColor="#FF1A1A1A"
+                app:cardCornerRadius="12dp"
+                app:cardElevation="2dp">
+
+                <FrameLayout
+                    android:layout_width="match_parent"
+                    android:layout_height="match_parent">
+
+                    <ImageView
+                        android:id="@+id/editTripCoverPreview"
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:contentDescription="Cover photo preview"
+                        android:scaleType="centerCrop" />
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="match_parent"
+                        android:background="#66000000" />
+
+                    <com.google.android.material.button.MaterialButton
+                        android:id="@+id/selectCoverButton"
+                        style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                        android:layout_width="wrap_content"
+                        android:layout_height="wrap_content"
+                        android:layout_gravity="center"
+                        android:text="Choose Cover Photo"
+                        android:textColor="@color/amber"
+                        app:strokeColor="@color/amber" />
+                </FrameLayout>
+            </androidx.cardview.widget.CardView>
+
+            <!-- Trip Name Input -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="20dp"
+                android:hint="Trip Name"
+                android:textColorHint="@color/readout_dim"
+                app:boxBackgroundColor="#FF181818"
+                app:boxStrokeColor="@color/amber"
+                app:hintTextColor="@color/amber">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editTripNameInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textCapWords"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="15sp" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Destination Input -->
+            <com.google.android.material.textfield.TextInputLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:hint="Destination"
+                android:textColorHint="@color/readout_dim"
+                app:boxBackgroundColor="#FF181818"
+                app:boxStrokeColor="@color/amber"
+                app:hintTextColor="@color/amber"
+                app:startIconDrawable="@drawable/ic_location"
+                app:startIconTint="@color/amber">
+
+                <com.google.android.material.textfield.TextInputEditText
+                    android:id="@+id/editTripDestinationInput"
+                    android:layout_width="match_parent"
+                    android:layout_height="wrap_content"
+                    android:inputType="textCapWords"
+                    android:textColor="#FFFFFFFF"
+                    android:textSize="15sp" />
+            </com.google.android.material.textfield.TextInputLayout>
+
+            <!-- Dates Row -->
+            <LinearLayout
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="14dp"
+                android:orientation="horizontal">
+
+                <!-- Start Date -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginEnd="6dp"
+                    android:layout_weight="1"
+                    android:hint="Start Date"
+                    android:textColorHint="@color/readout_dim"
+                    app:boxBackgroundColor="#FF181818"
+                    app:boxStrokeColor="@color/amber"
+                    app:hintTextColor="@color/amber"
+                    app:startIconDrawable="@drawable/ic_calendar"
+                    app:startIconTint="@color/amber">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editTripStartDateInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:cursorVisible="false"
+                        android:focusable="false"
+                        android:inputType="none"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="14sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+                <!-- End Date -->
+                <com.google.android.material.textfield.TextInputLayout
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="6dp"
+                    android:layout_weight="1"
+                    android:hint="End Date (Optional)"
+                    android:textColorHint="@color/readout_dim"
+                    app:boxBackgroundColor="#FF181818"
+                    app:boxStrokeColor="@color/amber"
+                    app:hintTextColor="@color/amber"
+                    app:startIconDrawable="@drawable/ic_calendar"
+                    app:startIconTint="@color/amber">
+
+                    <com.google.android.material.textfield.TextInputEditText
+                        android:id="@+id/editTripEndDateInput"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:clickable="true"
+                        android:cursorVisible="false"
+                        android:focusable="false"
+                        android:inputType="none"
+                        android:textColor="#FFFFFFFF"
+                        android:textSize="14sp" />
+                </com.google.android.material.textfield.TextInputLayout>
+
+            </LinearLayout>
+
+            <!-- Set as Active Camera Trip Checkbox -->
+            <com.google.android.material.checkbox.MaterialCheckBox
+                android:id="@+id/editTripSetActiveCheckbox"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="16dp"
+                android:checked="true"
+                android:text="Set as current active camera trip"
+                android:textColor="@color/readout"
+                app:buttonTint="@color/amber" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="32dp"
+                android:text="New photos and videos captured with RetroCam will be organized automatically into this trip."
+                android:textColor="@color/readout_dim"
+                android:textSize="12sp" />
+
+            <!-- Save Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/editTripSaveButton"
+                android:layout_width="match_parent"
+                android:layout_height="52dp"
+                android:layout_marginTop="28dp"
+                android:backgroundTint="@color/amber"
+                android:text="Save Trip"
+                android:textColor="#FF000000"
+                android:textSize="15sp"
+                android:textStyle="bold" />
+
+            <!-- Delete Button (Only visible when editing existing trip) -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/editTripDeleteButton"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="match_parent"
+                android:layout_height="48dp"
+                android:layout_marginTop="8dp"
+                android:text="Delete Trip"
+                android:textColor="@color/record_red"
+                android:textSize="14sp"
+                android:visibility="gone"
+                tools:visibility="visible" />
+
+        </LinearLayout>
+
+    </ScrollView>
+
+</LinearLayout>

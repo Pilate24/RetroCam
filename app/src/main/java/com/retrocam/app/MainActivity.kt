@@ -54,12 +54,24 @@ import androidx.core.view.isVisible
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.LinearSnapHelper
 import androidx.recyclerview.widget.RecyclerView
+
 import com.retrocam.app.databinding.ActivityMainBinding
+import com.retrocam.app.director.analyzer.ShotSceneAnalyzer
+import com.retrocam.app.director.detector.CameraCapabilityDetector
+import com.retrocam.app.director.detector.HorizonSensorDetector
+import com.retrocam.app.director.engine.ShotDirectorEngine
+import com.retrocam.app.director.model.AspectRatioOption
+import com.retrocam.app.director.model.CameraCapabilities
+import com.retrocam.app.director.ui.ShotDirectorController
 import com.retrocam.app.filter.FilterPreset
 import com.retrocam.app.filter.OverlayCompositor
 import com.retrocam.app.filter.PresetRepository
 import com.retrocam.app.filter.ShaderRenderer
 import com.retrocam.app.gallery.GalleryActivity
+import com.retrocam.app.trip.Trip
+import com.retrocam.app.trip.TripDetailsActivity
+import com.retrocam.app.trip.TripRepository
+import com.retrocam.app.trip.TripsActivity
 import com.retrocam.app.ui.CategoryAdapter
 import com.retrocam.app.ui.CompareActivity
 import com.retrocam.app.ui.CompareFrame
@@ -85,6 +97,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var videoRecordingManager: VideoRecordingManager
+    private lateinit var tripRepository: TripRepository
     private val proCameraManager = ProCameraManager()
     private var activeProParam: ProParam? = null
 
@@ -138,6 +151,14 @@ class MainActivity : AppCompatActivity() {
     private var lastSurpriseId: String? = null
     private var isPulsing = false
 
+    private lateinit var shotDirectorController: ShotDirectorController
+    private lateinit var horizonSensorDetector: HorizonSensorDetector
+    private var cameraCapabilities: CameraCapabilities = CameraCapabilities.DEFAULT_FALLBACK
+    private var lastDirectorAnalysisNanos = 0L
+    private val directorExecutor: ExecutorService = Executors.newSingleThreadExecutor()
+    @Volatile
+    private var isDirectorAnalyzing = false
+
     /**
      * The selected preset with the intensity already applied. Written on the main thread whenever
      * the selection or the slider changes, read on the camera thread by every frame — so it is
@@ -145,6 +166,7 @@ class MainActivity : AppCompatActivity() {
      */
     @Volatile
     private var activePreset: FilterPreset? = null
+
 
     private val requestCameraPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
@@ -190,6 +212,25 @@ class MainActivity : AppCompatActivity() {
         setUpProControls()
         setUpFlipCamera()
         setUpPermissionUI()
+        setUpShotDirector()
+
+        tripRepository = TripRepository.getInstance(this)
+
+        binding.tripsButton.setOnClickListener {
+            startActivity(Intent(this, TripsActivity::class.java))
+        }
+
+        binding.activeTripChip.setOnClickListener {
+            val active = tripRepository.getActiveTrip()
+            if (active != null) {
+                startActivity(
+                    Intent(this, TripDetailsActivity::class.java)
+                        .putExtra(TripDetailsActivity.EXTRA_TRIP_ID, active.id)
+                )
+            } else {
+                startActivity(Intent(this, TripsActivity::class.java))
+            }
+        }
 
         binding.galleryButton.setOnClickListener {
             startActivity(Intent(this, GalleryActivity::class.java))
@@ -767,9 +808,18 @@ class MainActivity : AppCompatActivity() {
                 binding.shutterButton.contentDescription = getString(R.string.record_video)
                 setStatus(R.string.status_ready)
                 stopPulsingRecordDot()
+                if (::shotDirectorController.isInitialized) {
+                    binding.shotDirectorPanel.directorPanelRoot.visibility =
+                        if (shotDirectorController.isEnabled) View.VISIBLE else View.GONE
+                    binding.directorToggleButton.isEnabled = true
+                    binding.directorToggleButton.alpha = if (shotDirectorController.isEnabled) 1f else 0.5f
+                }
             }
 
             is VideoRecordingManager.RecordingState.Starting -> {
+                binding.shotDirectorPanel.directorPanelRoot.visibility = View.GONE
+                binding.directorToggleButton.isEnabled = false
+                binding.directorToggleButton.alpha = 0.4f
                 binding.recordingIndicatorBar.visibility = View.VISIBLE
                 binding.recordTimerText.text = "00:00"
                 binding.recordStateText.text = getString(R.string.status_recording)
@@ -847,7 +897,19 @@ class MainActivity : AppCompatActivity() {
             is VideoRecordingManager.RecordingState.Success -> {
                 binding.shutterButton.isEnabled = true
                 onRecordingStateChanged(VideoRecordingManager.RecordingState.Idle)
-                toast(getString(R.string.video_saved_toast))
+                val activeTrip = tripRepository.getActiveTrip()
+                if (activeTrip != null) {
+                    tripRepository.addMediaToActiveTrip(
+                        uri = state.mediaStoreUri,
+                        displayName = state.displayName,
+                        isVideo = true,
+                        dateTaken = System.currentTimeMillis(),
+                        durationMs = state.durationMs
+                    )
+                    toast("Saved to Movies/RetroCam · Added to ${activeTrip.name}")
+                } else {
+                    toast(getString(R.string.video_saved_toast))
+                }
                 val intent = Intent(this, VideoReviewActivity::class.java).apply {
                     putExtra(VideoReviewActivity.EXTRA_URI, state.mediaStoreUri)
                     putExtra(VideoReviewActivity.EXTRA_NAME, state.displayName)
@@ -970,10 +1032,12 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setUpIntensitySlider() {
-        binding.intensitySlider.addOnChangeListener { _, value, _ ->
-            intensity = value
-            refreshActivePreset()
-            revealIntensity()
+        binding.intensitySlider.addOnChangeListener { _, value, fromUser ->
+            if (fromUser) {
+                intensity = value
+                refreshActivePreset()
+                revealIntensity()
+            }
         }
         binding.readoutRow.setOnClickListener {
             if (binding.intensitySlider.isVisible) hideIntensity() else revealIntensity()
@@ -1054,6 +1118,7 @@ class MainActivity : AppCompatActivity() {
                 }
 
                 observeZoom()
+                refreshCameraCapabilities()
                 setStatus(R.string.status_ready)
             } catch (e: Exception) {
                 Log.e(TAG, "Camera bind failed", e)
@@ -1177,6 +1242,7 @@ class MainActivity : AppCompatActivity() {
     private enum class AspectChoice(val label: String, val ratio: Float?) {
         AUTO("AUTO", null),
         PORTRAIT_3_4("3:4", 0.75f),
+        PORTRAIT_4_5("4:5", 4f / 5f),
         PORTRAIT_9_16("9:16", 9f / 16f),
         SQUARE("1:1", 1f),
         WIDESCREEN("16:9", 16f / 9f),
@@ -1227,7 +1293,61 @@ class MainActivity : AppCompatActivity() {
         binding.videoQualityButton.setOnClickListener { showQualityFpsMenu(it) }
         updateVideoQualityButton()
 
+        binding.directorToggleButton.setOnClickListener {
+            val newState = !shotDirectorController.isEnabled
+            shotDirectorController.isEnabled = newState
+            binding.directorToggleButton.alpha = if (newState) 1.0f else 0.5f
+            toast(if (newState) "AI Shot Director enabled" else "AI Shot Director disabled")
+        }
+
         binding.overflowButton.setOnClickListener { showOverflow(it) }
+    }
+
+    private fun setUpShotDirector() {
+        horizonSensorDetector = HorizonSensorDetector(this)
+        horizonSensorDetector.onHorizonUpdated = { roll, _, _ ->
+            binding.shotDirectorOverlay.horizonRollDegrees = roll
+        }
+
+        shotDirectorController = ShotDirectorController(
+            activity = this,
+            panelBinding = binding.shotDirectorPanel,
+            overlayView = binding.shotDirectorOverlay
+        )
+        shotDirectorController.isHorizonSensorAvailable = horizonSensorDetector.isAvailable
+
+        shotDirectorController.onApplyZoomRequested = { zoomRatio ->
+            applyZoom(zoomRatio)
+            true
+        }
+
+        shotDirectorController.onApplyAspectRequested = { aspectOption ->
+            applyDirectorAspect(aspectOption)
+        }
+    }
+
+    private fun applyDirectorAspect(option: AspectRatioOption) {
+        val targetChoice = when (option) {
+            AspectRatioOption.RATIO_4_3 -> AspectChoice.PORTRAIT_3_4
+            AspectRatioOption.RATIO_4_5 -> AspectChoice.PORTRAIT_4_5
+            AspectRatioOption.RATIO_1_1 -> AspectChoice.SQUARE
+            AspectRatioOption.RATIO_3_2 -> AspectChoice.THREETWO
+            AspectRatioOption.RATIO_16_9 -> AspectChoice.WIDESCREEN
+            AspectRatioOption.RATIO_9_16 -> AspectChoice.PORTRAIT_9_16
+        }
+        aspect = targetChoice
+        binding.aspectButton.text = aspect.label
+        refreshActivePreset()
+        binding.shotDirectorOverlay.activeAspectOption = option
+    }
+
+    private fun refreshCameraCapabilities() {
+        val isBack = (cameraSelector == CameraSelector.DEFAULT_BACK_CAMERA)
+        val caps = CameraCapabilityDetector.detectCapabilities(this, camera, isBack)
+        cameraCapabilities = caps
+        if (::shotDirectorController.isInitialized) {
+            shotDirectorController.currentCapabilities = caps
+        }
     }
 
     private fun updateVideoQualityButton() {
@@ -1294,12 +1414,21 @@ class MainActivity : AppCompatActivity() {
     private fun showOverflow(anchor: View) {
         PopupMenu(this, anchor).apply {
             menuInflater.inflate(R.menu.camera_overflow, menu)
+            menu.findItem(R.id.menuDirector)?.isChecked =
+                ::shotDirectorController.isInitialized && shotDirectorController.isEnabled
             menu.findItem(R.id.menuGrid).isChecked =
                 binding.gridOverlay.visibility == View.VISIBLE
             menu.findItem(R.id.menuSurprise).isChecked = surpriseMode
 
             setOnMenuItemClickListener { item ->
                 when (item.itemId) {
+                    R.id.menuDirector -> {
+                        val newState = !shotDirectorController.isEnabled
+                        shotDirectorController.isEnabled = newState
+                        binding.directorToggleButton.alpha = if (newState) 1.0f else 0.5f
+                        toast(if (newState) "AI Shot Director enabled" else "AI Shot Director disabled")
+                        true
+                    }
                     R.id.menuGrid -> {
                         val showing = binding.gridOverlay.visibility == View.VISIBLE
                         binding.gridOverlay.visibility = if (showing) View.GONE else View.VISIBLE
@@ -1327,6 +1456,14 @@ class MainActivity : AppCompatActivity() {
                             return@setOnMenuItemClickListener true
                         }
                         openCompare()
+                        true
+                    }
+                    R.id.menuRemaster -> {
+                        startActivity(Intent(this@MainActivity, com.retrocam.app.remaster.ui.RemasterActivity::class.java))
+                        true
+                    }
+                    R.id.menuTrips -> {
+                        startActivity(Intent(this@MainActivity, TripsActivity::class.java))
                         true
                     }
                     else -> false
@@ -1619,6 +1756,40 @@ class MainActivity : AppCompatActivity() {
             previous?.recycle()
         }
 
+        if (::shotDirectorController.isInitialized && shotDirectorController.isEnabled && !isVideoMode && !videoRecordingManager.isRecording) {
+            if (now - lastDirectorAnalysisNanos > DIRECTOR_ANALYSIS_NANOS && !isDirectorAnalyzing) {
+                lastDirectorAnalysisNanos = now
+                isDirectorAnalyzing = true
+                val directorFrame = rotateBitmap(frameBitmap, imageRotation, isFront)
+                val isPortrait = (uprightWidth < uprightHeight)
+                val currentRoll = if (::horizonSensorDetector.isInitialized) horizonSensorDetector.rollDegrees else 0f
+                val sensorAvail = if (::horizonSensorDetector.isInitialized) horizonSensorDetector.isAvailable else false
+
+                directorExecutor.execute {
+                    try {
+                        val analysis = ShotSceneAnalyzer.analyzeFrame(directorFrame)
+                        val recommendation = ShotDirectorEngine.generateRecommendation(
+                            capabilities = cameraCapabilities,
+                            analysis = analysis,
+                            isUprightPortrait = isPortrait,
+                            deviceRollDegrees = currentRoll,
+                            isHorizonSensorAvailable = sensorAvail
+                        )
+                        runOnUiThread {
+                            if (!isFinishing && !isDestroyed) {
+                                shotDirectorController.updateRecommendation(recommendation, analysis)
+                            }
+                        }
+                    } catch (e: Exception) {
+                        Log.w(TAG, "Shot Director background analysis error", e)
+                    } finally {
+                        directorFrame.recycle()
+                        isDirectorAnalyzing = false
+                    }
+                }
+            }
+        }
+
         val elapsedSeconds = (now - startTimeNanos) / 1_000_000_000f
         val layout = OverlayCompositor.layoutFor(uprightWidth, uprightHeight, preset)
         previewDate.time = System.currentTimeMillis()
@@ -1793,10 +1964,57 @@ class MainActivity : AppCompatActivity() {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
         }
 
+        val activeTrip = tripRepository.getActiveTrip()
+        if (activeTrip != null) {
+            val displayName = "RetroCam_${preset.id}_$stamp"
+            tripRepository.addMediaToActiveTrip(
+                uri = uri,
+                displayName = displayName,
+                isVideo = false,
+                dateTaken = System.currentTimeMillis()
+            )
+        }
+
         runOnUiThread {
-            if (revealName) toast(getString(R.string.surprise_result, preset.name))
-            else Toast.makeText(this, R.string.saved_toast, Toast.LENGTH_SHORT).show()
+            if (revealName) {
+                val base = getString(R.string.surprise_result, preset.name)
+                toast(if (activeTrip != null) "$base · Added to ${activeTrip.name}" else base)
+            } else {
+                val message = if (activeTrip != null) {
+                    "Saved to Pictures/RetroCam · Added to ${activeTrip.name}"
+                } else {
+                    getString(R.string.saved_toast)
+                }
+                Toast.makeText(this, message, Toast.LENGTH_SHORT).show()
+            }
             setStatus(if (surpriseMode) R.string.surprise_status else R.string.status_ready)
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        updateActiveTripUI()
+        if (::horizonSensorDetector.isInitialized) {
+            horizonSensorDetector.start()
+        }
+        refreshCameraCapabilities()
+    }
+
+    override fun onPause() {
+        super.onPause()
+        if (::horizonSensorDetector.isInitialized) {
+            horizonSensorDetector.stop()
+        }
+    }
+
+    private fun updateActiveTripUI() {
+        if (!::tripRepository.isInitialized) return
+        val activeTrip = tripRepository.getActiveTrip()
+        if (activeTrip != null) {
+            binding.activeTripChip.visibility = View.VISIBLE
+            binding.activeTripChip.text = "📍 ${activeTrip.name}"
+        } else {
+            binding.activeTripChip.visibility = View.GONE
         }
     }
 
@@ -1817,6 +2035,7 @@ class MainActivity : AppCompatActivity() {
         previewRenderer?.close()
         thumbnails?.close()
         cameraExecutor.shutdown()
+        directorExecutor.shutdown()
     }
 
     companion object {
@@ -1830,5 +2049,6 @@ class MainActivity : AppCompatActivity() {
         private const val COMPARE_FRAME_NANOS = 1_000_000_000L
         private const val COMPARE_FRAME_WIDTH = 480
         private const val INTENSITY_VISIBLE_MS = 3500L
+        private const val DIRECTOR_ANALYSIS_NANOS = 600_000_000L
     }
 }

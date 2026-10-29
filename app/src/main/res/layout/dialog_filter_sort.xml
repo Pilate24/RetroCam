@@ -1,0 +1,125 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#FF161616"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-medium"
+        android:text="Sort &amp; Filter"
+        android:textColor="#FFFFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="SORT BY"
+        android:textColor="@color/amber"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/radioGroupSort"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp">
+
+        <RadioButton
+            android:id="@+id/radioDateDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:buttonTint="@color/amber"
+            android:checked="true"
+            android:text="Date (Newest first)"
+            android:textColor="#FFFFFFFF" />
+
+        <RadioButton
+            android:id="@+id/radioDateAsc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:buttonTint="@color/amber"
+            android:text="Date (Oldest first)"
+            android:textColor="#FFFFFFFF" />
+
+        <RadioButton
+            android:id="@+id/radioSizeDesc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:buttonTint="@color/amber"
+            android:text="File Size (Largest first)"
+            android:textColor="#FFFFFFFF" />
+
+        <RadioButton
+            android:id="@+id/radioNameAsc"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:buttonTint="@color/amber"
+            android:text="Name (A to Z)"
+            android:textColor="#FFFFFFFF" />
+    </RadioGroup>
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="GRID COLUMNS"
+        android:textColor="@color/amber"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <Button
+            android:id="@+id/btnGrid2Cols"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:text="Spacious (2)"
+            android:textColor="#FFFFFFFF" />
+
+        <Button
+            android:id="@+id/btnGrid3Cols"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_marginEnd="4dp"
+            android:layout_weight="1"
+            android:text="Normal (3)"
+            android:textColor="@color/amber" />
+
+        <Button
+            android:id="@+id/btnGrid4Cols"
+            style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="4dp"
+            android:layout_weight="1"
+            android:text="Compact (4)"
+            android:textColor="#FFFFFFFF" />
+    </LinearLayout>
+
+    <Button
+        android:id="@+id/btnApplyFilterSort"
+        android:layout_width="match_parent"
+        android:layout_height="48dp"
+        android:layout_marginTop="24dp"
+        android:backgroundTint="@color/amber"
+        android:text="Apply"
+        android:textColor="#FF000000"
+        android:textStyle="bold" />
+
+</LinearLayout>

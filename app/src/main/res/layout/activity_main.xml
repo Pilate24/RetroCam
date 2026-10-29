@@ -28,6 +28,12 @@
         android:layout_height="match_parent"
         android:visibility="gone" />
 
+    <!-- AI Shot Director Composition Overlays -->
+    <com.retrocam.app.director.ui.ShotDirectorOverlayView
+        android:id="@+id/shotDirectorOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent" />
+
     <View
         android:layout_width="match_parent"
         android:layout_height="120dp"
@@ -75,6 +81,37 @@
             android:layout_height="1dp"
             android:layout_weight="1" />
 
+        <TextView
+            android:id="@+id/activeTripChip"
+            android:layout_width="wrap_content"
+            android:layout_height="32dp"
+            android:layout_marginEnd="6dp"
+            android:background="@drawable/trip_badge_active"
+            android:ellipsize="end"
+            android:fontFamily="monospace"
+            android:gravity="center"
+            android:maxWidth="130dp"
+            android:maxLines="1"
+            android:paddingStart="8dp"
+            android:paddingEnd="8dp"
+            android:textColor="@color/amber"
+            android:textSize="10sp"
+            android:textStyle="bold"
+            android:visibility="gone" />
+
+
+        <ImageButton
+            android:id="@+id/directorToggleButton"
+            style="@style/TopBarButton"
+            android:contentDescription="AI Shot Director"
+            android:src="@drawable/ic_director" />
+
+        <ImageButton
+            android:id="@+id/tripsButton"
+            style="@style/TopBarButton"
+            android:contentDescription="Trips"
+            android:src="@drawable/ic_trip" />
+
         <!-- Grid, compare and surprise live in here: reached less often than flash or timer. -->
         <ImageButton
             android:id="@+id/overflowButton"
@@ -82,6 +119,15 @@
             android:contentDescription="@string/more_options"
             android:src="@drawable/ic_more" />
     </LinearLayout>
+
+    <!-- AI Shot Director Recommendation Panel -->
+    <include
+        android:id="@+id/shotDirectorPanel"
+        layout="@layout/layout_shot_director_panel"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top"
+        android:layout_marginTop="56dp" />
 
     <TextView
         android:id="@+id/statusChip"
@@ -200,6 +246,7 @@
         android:paddingBottom="5dp"
         android:textColor="@color/readout"
         android:textSize="13sp" />
+
 
     <!-- The camera body. Kept as short as it can be: every dp here covers live image. -->
     <LinearLayout

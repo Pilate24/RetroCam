@@ -1,0 +1,301 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:id="@+id/directorPanelRoot"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:layout_marginStart="14dp"
+    android:layout_marginEnd="14dp"
+    android:orientation="vertical">
+
+    <!-- Collapsed Header Pill: Tap to expand/collapse -->
+    <LinearLayout
+        android:id="@+id/directorHeaderPill"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:background="@drawable/readout_bg"
+        android:clickable="true"
+        android:focusable="true"
+        android:gravity="center_vertical"
+        android:orientation="horizontal"
+        android:paddingStart="12dp"
+        android:paddingTop="5dp"
+        android:paddingEnd="12dp"
+        android:paddingBottom="5dp">
+
+        <TextView
+            android:id="@+id/directorPillIcon"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginEnd="6dp"
+            android:text="🎬"
+            android:textSize="12sp" />
+
+        <TextView
+            android:id="@+id/directorPillTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:letterSpacing="0.08"
+            android:text="AI SHOT DIRECTOR"
+            android:textColor="@color/amber"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:id="@+id/directorPillSummary"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginStart="6dp"
+            android:fontFamily="monospace"
+            android:text="· Balanced"
+            android:textColor="@color/readout"
+            android:textSize="11sp" />
+
+        <ImageView
+            android:id="@+id/directorExpandIcon"
+            android:layout_width="14dp"
+            android:layout_height="14dp"
+            android:layout_marginStart="6dp"
+            android:contentDescription="@null"
+            android:src="@drawable/ic_expand_more"
+            app:tint="@color/amber" />
+    </LinearLayout>
+
+    <!-- Expanded Recommendation Card -->
+    <LinearLayout
+        android:id="@+id/directorExpandedCard"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="6dp"
+        android:background="@drawable/camera_body"
+        android:orientation="vertical"
+        android:padding="12dp"
+        android:visibility="gone">
+
+        <!-- Top Header in card: Scene Name & Confidence -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/directorSceneBadge"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/mode_pill_selected"
+                android:fontFamily="monospace"
+                android:paddingStart="8dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="8dp"
+                android:paddingBottom="2dp"
+                android:text="👤 PORTRAIT"
+                android:textColor="@android:color/black"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <TextView
+                android:id="@+id/directorConfidenceText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="8dp"
+                android:fontFamily="monospace"
+                android:text="88% CONFIDENCE"
+                android:textColor="@color/readout_dim"
+                android:textSize="10sp" />
+
+            <Space
+                android:layout_width="0dp"
+                android:layout_height="1dp"
+                android:layout_weight="1" />
+
+            <ImageButton
+                android:id="@+id/directorCloseCardButton"
+                android:layout_width="22dp"
+                android:layout_height="22dp"
+                android:background="?android:attr/selectableItemBackgroundBorderless"
+                android:contentDescription="Minimize card"
+                android:src="@android:drawable/ic_menu_close_clear_cancel"
+                app:tint="@color/readout_dim" />
+        </LinearLayout>
+
+        <!-- Shot Title -->
+        <TextView
+            android:id="@+id/directorShotTitle"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:fontFamily="monospace"
+            android:text="Recommended: Balanced Portrait"
+            android:textColor="@color/readout"
+            android:textSize="13sp"
+            android:textStyle="bold" />
+
+        <!-- Parameter Chips Row: Lens, Zoom, Aspect Ratio -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <TextView
+                android:id="@+id/directorLensChip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/readout_bg"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="2dp"
+                android:text="LENS: Main"
+                android:textColor="@color/amber"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/directorZoomChip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginEnd="6dp"
+                android:background="@drawable/readout_bg"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="2dp"
+                android:text="ZOOM: 1.5×"
+                android:textColor="@color/amber"
+                android:textSize="10sp" />
+
+            <TextView
+                android:id="@+id/directorAspectChip"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:background="@drawable/readout_bg"
+                android:fontFamily="monospace"
+                android:paddingStart="6dp"
+                android:paddingTop="2dp"
+                android:paddingEnd="6dp"
+                android:paddingBottom="2dp"
+                android:text="ASPECT: 4:5"
+                android:textColor="@color/amber"
+                android:textSize="10sp" />
+        </LinearLayout>
+
+        <!-- Camera Positioning Advice -->
+        <TextView
+            android:id="@+id/directorPositionAdvice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:fontFamily="monospace"
+            android:text="📍 Position eyes along upper third; step back ~0.5m"
+            android:textColor="@color/readout"
+            android:textSize="11sp" />
+
+        <!-- Composition Tip -->
+        <TextView
+            android:id="@+id/directorCompositionTip"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="3dp"
+            android:fontFamily="monospace"
+            android:text="💡 Leave breathing room between head and upper frame."
+            android:textColor="@color/amber"
+            android:textSize="11sp" />
+
+        <!-- Reason -->
+        <TextView
+            android:id="@+id/directorReason"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="2dp"
+            android:fontFamily="monospace"
+            android:text="🔍 Eye-level framing creates natural connection without distortion."
+            android:textColor="@color/readout_dim"
+            android:textSize="10sp" />
+
+        <!-- Crop Warning (if crop cuts off subjects) -->
+        <TextView
+            android:id="@+id/directorCropWarning"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
+            android:background="#33FF5722"
+            android:fontFamily="monospace"
+            android:padding="4dp"
+            android:text="⚠️ Crop will clip subjects on edges. Recommend 4:3."
+            android:textColor="#FFFF8A65"
+            android:textSize="10sp"
+            android:visibility="gone" />
+
+        <!-- Action Buttons -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="10dp"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/directorApplyFramingButton"
+                style="@style/Widget.MaterialComponents.Button"
+                android:layout_width="0dp"
+                android:layout_height="36dp"
+                android:layout_weight="1"
+                android:backgroundTint="@color/amber"
+                android:fontFamily="monospace"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:letterSpacing="0.06"
+                android:text="APPLY FRAMING"
+                android:textColor="@android:color/black"
+                android:textSize="10sp"
+                android:textStyle="bold" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/directorThreeIdeasButton"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:fontFamily="monospace"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="3 IDEAS"
+                android:textColor="@color/readout"
+                android:textSize="10sp"
+                app:strokeColor="@color/amber" />
+
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/directorCompareRatiosButton"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:fontFamily="monospace"
+                android:insetTop="0dp"
+                android:insetBottom="0dp"
+                android:text="COMPARE"
+                android:textColor="@color/readout"
+                android:textSize="10sp"
+                app:strokeColor="@color/amber" />
+
+            <ImageButton
+                android:id="@+id/directorGuidesMenuButton"
+                android:layout_width="36dp"
+                android:layout_height="36dp"
+                android:layout_marginStart="6dp"
+                android:background="@drawable/readout_bg"
+                android:contentDescription="Overlays and guides"
+                android:padding="6dp"
+                android:src="@drawable/ic_grid"
+                app:tint="@color/amber" />
+        </LinearLayout>
+
+    </LinearLayout>
+
+</LinearLayout>

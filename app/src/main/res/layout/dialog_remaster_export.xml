@@ -1,0 +1,235 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#FF181818"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Header -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:text="Export Remastered Photo"
+        android:textColor="#FFFFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/exportSummaryText"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:text="Select export resolution, format and destination"
+        android:textColor="#99FFFFFF"
+        android:textSize="13sp" />
+
+    <!-- Resolution Selection -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="RESOLUTION"
+        android:textColor="@color/amber"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <RadioGroup
+        android:id="@+id/resolutionRadioGroup"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="vertical">
+
+        <RadioButton
+            android:id="@+id/radioOriginalRes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:checked="true"
+            android:text="Original Resolution (3000 × 4000)"
+            android:textColor="#FFFFFFFF"
+            android:buttonTint="@color/amber" />
+
+        <RadioButton
+            android:id="@+id/radioUpscaledRes"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="AI 2× Super Resolution (6000 × 8000)"
+            android:textColor="#FFFFFFFF"
+            android:buttonTint="@color/amber" />
+    </RadioGroup>
+
+    <!-- Format Selection -->
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="16dp"
+        android:text="FORMAT &amp; QUALITY"
+        android:textColor="@color/amber"
+        android:textSize="12sp"
+        android:textStyle="bold" />
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="8dp"
+        android:orientation="horizontal">
+
+        <com.google.android.material.button.MaterialButtonToggleGroup
+            android:id="@+id/formatToggleGroup"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            app:singleSelection="true">
+
+            <Button
+                android:id="@+id/btnFormatJpeg"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="JPEG"
+                android:textColor="#FFFFFFFF" />
+
+            <Button
+                android:id="@+id/btnFormatPng"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="PNG (Lossless)"
+                android:textColor="#FFFFFFFF" />
+        </com.google.android.material.button.MaterialButtonToggleGroup>
+    </LinearLayout>
+
+    <!-- JPEG Quality Selector (shown only for JPEG) -->
+    <LinearLayout
+        android:id="@+id/jpegQualityLayout"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:orientation="vertical">
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <TextView
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:text="JPEG Quality"
+                android:textColor="#CCFFFFFF"
+                android:textSize="13sp" />
+
+            <TextView
+                android:id="@+id/qualityPercentText"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="95% (High)"
+                android:textColor="@color/amber"
+                android:textSize="13sp"
+                android:textStyle="bold" />
+        </LinearLayout>
+
+        <com.google.android.material.slider.Slider
+            android:id="@+id/qualitySlider"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:valueFrom="70"
+            android:valueTo="100"
+            android:stepSize="5"
+            android:value="95"
+            app:thumbColor="@color/amber"
+            app:trackColorActive="@color/amber"
+            app:trackColorInactive="#44FFFFFF" />
+    </LinearLayout>
+
+    <!-- Estimated File Size Readout Card -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="12dp"
+        android:background="#262626"
+        android:orientation="horizontal"
+        android:padding="12dp">
+
+        <TextView
+            android:layout_width="0dp"
+            android:layout_height="wrap_content"
+            android:layout_weight="1"
+            android:text="Estimated File Size:"
+            android:textColor="#99FFFFFF"
+            android:textSize="13sp" />
+
+        <TextView
+            android:id="@+id/estimatedSizeText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:text="~3.8 MB"
+            android:textColor="#FFFFFFFF"
+            android:textSize="14sp"
+            android:textStyle="bold" />
+    </LinearLayout>
+
+    <!-- Export Action Buttons -->
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="20dp"
+        android:orientation="vertical">
+
+        <!-- Save as Copy Button -->
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnSaveCopy"
+            android:layout_width="match_parent"
+            android:layout_height="50dp"
+            android:backgroundTint="@color/amber"
+            android:text="Save as Copy"
+            android:textColor="#FF000000"
+            android:textStyle="bold"
+            app:cornerRadius="8dp" />
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="8dp"
+            android:orientation="horizontal">
+
+            <!-- Share Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnShare"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginEnd="4dp"
+                android:layout_weight="1"
+                android:text="Share"
+                android:textColor="#FFFFFFFF"
+                app:cornerRadius="8dp"
+                app:strokeColor="#66FFFFFF" />
+
+            <!-- Replace Original Button -->
+            <com.google.android.material.button.MaterialButton
+                android:id="@+id/btnReplaceOriginal"
+                style="@style/Widget.MaterialComponents.Button.OutlinedButton"
+                android:layout_width="0dp"
+                android:layout_height="48dp"
+                android:layout_marginStart="4dp"
+                android:layout_weight="1"
+                android:text="Replace Original"
+                android:textColor="#FFFF7777"
+                app:cornerRadius="8dp"
+                app:strokeColor="#66FF5555" />
+        </LinearLayout>
+
+        <com.google.android.material.button.MaterialButton
+            android:id="@+id/btnCancel"
+            style="@style/Widget.MaterialComponents.Button.TextButton"
+            android:layout_width="match_parent"
+            android:layout_height="44dp"
+            android:layout_marginTop="4dp"
+            android:text="Cancel"
+            android:textColor="#88FFFFFF" />
+    </LinearLayout>
+
+</LinearLayout>

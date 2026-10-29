@@ -1,0 +1,96 @@
+<?xml version="1.0" encoding="utf-8"?>
+<FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:background="@android:color/black">
+
+    <!-- Photo Container -->
+    <com.retrocam.app.library.ui.ZoomableImageView
+        android:id="@+id/zoomablePhoto"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:contentDescription="@string/photo"
+        android:visibility="gone" />
+
+    <!-- Video Container -->
+    <FrameLayout
+        android:id="@+id/videoContainer"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:visibility="gone">
+
+        <VideoView
+            android:id="@+id/videoPlayer"
+            android:layout_width="match_parent"
+            android:layout_height="match_parent"
+            android:layout_gravity="center" />
+
+        <ImageView
+            android:id="@+id/videoPlayPauseOverlay"
+            android:layout_width="64dp"
+            android:layout_height="64dp"
+            android:layout_gravity="center"
+            android:background="@drawable/readout_bg"
+            android:padding="16dp"
+            android:src="@drawable/ic_play"
+            app:tint="@color/amber" />
+
+        <!-- Video Controls Bar -->
+        <LinearLayout
+            android:id="@+id/videoControlsBar"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_gravity="bottom"
+            android:layout_marginBottom="90dp"
+            android:background="#99000000"
+            android:gravity="center_vertical"
+            android:orientation="horizontal"
+            android:paddingStart="12dp"
+            android:paddingTop="6dp"
+            android:paddingEnd="12dp"
+            android:paddingBottom="6dp">
+
+            <TextView
+                android:id="@+id/videoTimeCurrent"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="00:00"
+                android:textColor="#FFFFFFFF"
+                android:textSize="12sp" />
+
+            <SeekBar
+                android:id="@+id/videoSeekBar"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:max="100"
+                android:progressBackgroundTint="#55FFFFFF"
+                android:progressTint="@color/amber"
+                android:thumbTint="@color/amber" />
+
+            <TextView
+                android:id="@+id/videoTimeTotal"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:fontFamily="monospace"
+                android:text="00:00"
+                android:textColor="#88FFFFFF"
+                android:textSize="12sp" />
+
+            <Button
+                android:id="@+id/btnPlaybackSpeed"
+                style="@style/Widget.MaterialComponents.Button.TextButton"
+                android:layout_width="wrap_content"
+                android:layout_height="32dp"
+                android:layout_marginStart="6dp"
+                android:minWidth="44dp"
+                android:padding="2dp"
+                android:text="1.0x"
+                android:textColor="@color/amber"
+                android:textSize="11sp" />
+        </LinearLayout>
+    </FrameLayout>
+
+</FrameLayout>

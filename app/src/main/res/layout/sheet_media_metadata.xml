@@ -1,0 +1,152 @@
+<?xml version="1.0" encoding="utf-8"?>
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="wrap_content"
+    android:background="#FF161616"
+    android:orientation="vertical"
+    android:padding="20dp">
+
+    <!-- Drag Handle -->
+    <View
+        android:layout_width="36dp"
+        android:layout_height="4dp"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginBottom="16dp"
+        android:background="#44FFFFFF" />
+
+    <TextView
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:fontFamily="sans-serif-medium"
+        android:text="Media Details"
+        android:textColor="#FFFFFFFF"
+        android:textSize="18sp"
+        android:textStyle="bold" />
+
+    <TextView
+        android:id="@+id/metaFileName"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:layout_marginTop="4dp"
+        android:ellipsize="middle"
+        android:fontFamily="monospace"
+        android:maxLines="1"
+        android:textColor="@color/amber"
+        android:textSize="13sp" />
+
+    <View
+        android:layout_width="match_parent"
+        android:layout_height="1dp"
+        android:layout_marginTop="12dp"
+        android:layout_marginBottom="12dp"
+        android:background="#22FFFFFF" />
+
+    <!-- Details Grid -->
+    <TableLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:stretchColumns="1">
+
+        <TableRow android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="Date &amp; Time"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaDateTime"
+                android:gravity="end"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+        </TableRow>
+
+        <TableRow android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="Resolution"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaResolution"
+                android:gravity="end"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+        </TableRow>
+
+        <TableRow android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="File Size"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaFileSize"
+                android:gravity="end"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+        </TableRow>
+
+        <TableRow android:id="@+id/rowDuration" android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="Duration"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaDuration"
+                android:gravity="end"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+        </TableRow>
+
+        <TableRow android:id="@+id/rowCamera" android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="Camera"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaCamera"
+                android:gravity="end"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+        </TableRow>
+
+        <TableRow android:id="@+id/rowExifParams" android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="EXIF Exposure"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaExifParams"
+                android:gravity="end"
+                android:fontFamily="monospace"
+                android:textColor="@color/amber"
+                android:textSize="13sp" />
+        </TableRow>
+
+        <TableRow android:id="@+id/rowEditedStatus" android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="Status"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaStatus"
+                android:gravity="end"
+                android:textColor="#FFFFFFFF"
+                android:textSize="13sp" />
+        </TableRow>
+
+        <TableRow android:id="@+id/rowPath" android:paddingTop="4dp" android:paddingBottom="4dp">
+            <TextView
+                android:text="Storage Path"
+                android:textColor="#88FFFFFF"
+                android:textSize="13sp" />
+            <TextView
+                android:id="@+id/metaPath"
+                android:gravity="end"
+                android:ellipsize="middle"
+                android:maxWidth="220dp"
+                android:maxLines="1"
+                android:textColor="#88FFFFFF"
+                android:textSize="12sp" />
+        </TableRow>
+    </TableLayout>
+
+</LinearLayout>
