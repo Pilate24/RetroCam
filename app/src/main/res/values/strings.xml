@@ -38,6 +38,17 @@
     <!-- Video Recording -->
     <string name="mode_photo">PHOTO</string>
     <string name="mode_video">VIDEO</string>
+    <string name="mode_booth">BOOTH</string>
+    <string name="mode_double">DOUBLE</string>
+    <string name="double_exposure_title">DOUBLE EXPOSURE</string>
+    <string name="double_exposure_shot1_captured">Shot 1 captured! Align shot 2</string>
+    <string name="double_exposure_saved">Double Exposure saved to Pictures/RetroCam</string>
+    <string name="double_exposure_retake_toast">Shot 1 cleared. Ready for new base shot.</string>
+    <string name="photobooth_title">PHOTO BOOTH</string>
+    <string name="save_strip">Save Strip</string>
+    <string name="share_strip">Share Strip</string>
+    <string name="retake_booth">Retake</string>
+    <string name="strip_saved_toast">Photobooth strip saved to Pictures/RetroCam</string>
     <string name="record_video">Record video</string>
     <string name="stop_recording">Stop recording</string>
     <string name="pause_recording">Pause recording</string>

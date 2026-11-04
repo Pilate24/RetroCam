@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Disposable Cardboard: Packaging yellow gradient with printed red top band -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#E6B45309"
+                android:centerColor="#80D97706"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+    <item
+        android:height="3dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFDC2626" />
+        </shape>
+    </item>
+</layer-list>

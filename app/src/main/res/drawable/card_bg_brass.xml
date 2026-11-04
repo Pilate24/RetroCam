@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Swatch preview card for Golden Brass Rangefinder -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#FF855718"
+                android:endColor="#FF5A390A" />
+            <corners android:radius="14dp" />
+            <stroke
+                android:width="1.5dp"
+                android:color="#FFD4AF37" />
+        </shape>
+    </item>
+    <item
+        android:height="2.5dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFEF3C7" />
+            <corners
+                android:topLeftRadius="14dp"
+                android:topRightRadius="14dp" />
+        </shape>
+    </item>
+</layer-list>

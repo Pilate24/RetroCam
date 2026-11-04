@@ -1,0 +1,47 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1990s Translucent Neon Shutter: Glowing neon cyan ring, translucent collar, hot magenta release dome. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Glowing neon cyan outer bezel ring -->
+    <item>
+        <shape android:shape="oval">
+            <stroke
+                android:width="3dp"
+                android:color="#FF00E5FF" />
+            <solid android:color="#4D00E5FF" />
+        </shape>
+    </item>
+    <!-- Translucent atomic gap -->
+    <item
+        android:left="5dp"
+        android:top="5dp"
+        android:right="5dp"
+        android:bottom="5dp">
+        <shape android:shape="oval">
+            <solid android:color="#E6002027" />
+        </shape>
+    </item>
+    <!-- Radiant hot magenta domed shutter button -->
+    <item
+        android:left="8dp"
+        android:top="8dp"
+        android:right="8dp"
+        android:bottom="8dp">
+        <shape android:shape="oval">
+            <gradient
+                android:angle="135"
+                android:startColor="#FFFF4081"
+                android:centerColor="#FFFF007F"
+                android:endColor="#FFC2185B" />
+        </shape>
+    </item>
+    <!-- Translucent neon specular core -->
+    <item
+        android:left="24dp"
+        android:top="24dp"
+        android:right="24dp"
+        android:bottom="24dp">
+        <shape android:shape="oval">
+            <solid android:color="#80FFFFFF" />
+        </shape>
+    </item>
+</layer-list>

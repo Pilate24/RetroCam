@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1990s Neon: Translucent frosted cyber glass with cyan specular line -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#D9003842"
+                android:centerColor="#80004D5A"
+                android:endColor="#00000000" />
+        </shape>
+    </item>
+    <item
+        android:height="1.5dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#B300E5FF" />
+        </shape>
+    </item>
+</layer-list>

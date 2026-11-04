@@ -1,13 +1,18 @@
-# RetroCam v1.4.0
+# RetroCam v1.5.0
 
 CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic retro film camera for Android 13+ (minSdk 33).
 
-**[Download the Latest APK (v1.4.0)](https://github.com/Pilate24/RetroCam/releases/download/v1.4.0/RetroCam-v1.4.0.apk)** — Sideload directly to any Android 13+ device.
+**[Download the Latest APK (v1.5.0)](https://github.com/Pilate24/RetroCam/releases/download/v1.5.0/RetroCam-v1.5.0.apk)** — Sideload directly to any Android 13+ device.
 
 ---
 
-## What's New in v1.4.0
+## What's New in v1.5.0
 
+- 🎨 **Retro Camera Body Themes (Skeuomorphic Skins)**: Real-time customization of camera body textures, dials, and shutter buttons across 4 iconic retro eras (1970s Classic, 1990s Translucent Neon, Disposable Cardboard Wrap, Golden Brass Rangefinder).
+- 🎞️ **4-Shot Photobooth Film Strip Maker**: Automated 4-pose photo booth with timed countdowns, flash support, and 5 vintage border card themes.
+- 🎭 **Analog Double Exposure Mode (MX)**: Optical screen exposure composite with live viewfinder ghost overlay and instant retake banner.
+- ⚡ **Enhanced Flash Synchronization**: Universal flash trigger synchronization supporting back LED torch/flash and warm front-screen illumination.
+- 🚀 **Streamlined Lightweight Gallery**: Removed heavy external media library indexer; restored zero-permission, ultra-fast Scoped Storage photo gallery.
 - 🎬 **AI Shot Director & Smart Lens Recommender**: Real-time on-device computer vision analyzing preview framing, scene geometry, and composition:
   - **Scene Classification**: Automatically identifies Portrait, Group Photo, Landscape, Architecture, Food, Sunset/Sunrise, Close-Up/Macro, and Street scenes with genuine confidence scoring.
   - **Hardware Lens & Zoom Detection**: Detects real physical lenses (Ultra-Wide, Main, Telephoto) via 35mm equivalent focal length ($f_{35} = f \times CF$) and optical field-of-view, strictly clamped to verified hardware zoom limits (`minZoomRatio`..`maxZoomRatio`).
@@ -18,7 +23,23 @@ CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic ret
   - **Precision Composition Overlays**: Rule-of-thirds grid with golden intersection points, center symmetry crosshairs, motion sensor-driven artificial horizon level gauge ($\pm 1.0^\circ$ precision), portrait framing silhouette, and face brackets.
   - **Privacy & Performance**: 100% on-device processing via Android `FaceDetector` and spatial gradients. Zero network calls, zero cloud APIs, and throttled execution that automatically pauses during video recording to guarantee zero dropped frames.
 - ✨ **AI Photo Remaster**: On-device photographic remastering engine with auto-tonal enhancement, shadow lift, portrait enhancement, and super-resolution.
-- 🗂️ **Smart Media Library & Trips**: Intelligent duplicate image detection, EXIF metadata inspector, album organizer, storage cleanup dashboard, and photo trip memory logs.
+- 🎨 **Retro Camera Body Themes (Skeuomorphic Skins)**: Customize the physical body material, tactile knobs, and shutter release:
+  - **1970s Classic**: Matte black vulcanite leatherette with brushed chrome metal top-plate, satin aluminum selector pill, and iconic red enamel soft-release shutter button core.
+  - **1990s Translucent Neon**: Transparent colorful plastic casing (like the iMac G3 or Game Boy Color) in atomic teal/cyan polycarbonate with glowing neon rim and radiant hot-magenta dome shutter button.
+  - **Disposable Camera Cardboard Wrap**: Graphic printed cardboard box look with classic packaging golden yellow, racing red diagonal band, printed seams, and tactile injection-molded red plastic shutter.
+  - **Golden Brass Rangefinder**: Vintage Leica-inspired aged brass body with hand-burnished patina, etched dials, knurled knobs, and antique ivory enamel markings.
+  - **Instant Switcher & Persistence**: Tap the Camera Skin button in the top bar or overflow menu to preview and apply any theme with real-time haptic visual update, persisted across sessions via `SharedPreferences`.
+- 🗂️ **Photo Gallery & Trips**: Lightweight zero-permission in-app retro photo and video gallery, full-screen viewer with sharing and AI Remaster shortcut, and photo trip memory logs.
+- 🎞️ **4-Shot Photobooth Film Strip Maker**: Authentic 90s mall / Korean 4-cut photobooth shooting experience:
+  - **Automated 4-Pose Session**: Guided poses with animated countdowns (3… 2… 1… Snap!) and camera shutter clicks.
+  - **Full Filter & Flash Consistency**: Every pose is filtered with the active retro film look and supports both back LED flash and front-screen warm flash.
+  - **5 Analog Strip Themes**: Real-time styling with Classic White, Matte Black, Vintage Cream, Y2K Pastel Pink, and 90s Lavender card borders.
+  - **Analog Details**: Header title, pose indices (`#01` to `#04`), timestamp, film recipe name, and authentic printed barcode.
+  - **Save & Share**: One-tap high-resolution JPEG export to `Pictures/RetroCam` and direct social sharing.
+- 🎭 **Analog Double Exposure Mode (MX)**: Classic dual-exposure photographic composite on the same virtual frame of film:
+  - **Live Ghost Viewfinder**: Once Shot 1 (base silhouette / portrait) is taken, a semi-transparent ghost preview overlays the live camera feed so you can align Shot 2 (textures, city lights, flowers) with pinpoint visual accuracy.
+  - **One-Tap Retake Banner**: Easily discard and retake Shot 1 anytime before exposing Shot 2.
+  - **Optical Screen Blending**: Mathematically simulates real photographic silver-halide light exposure ($A + B - A \times B$), burning highlights into shadows without harsh clipping.
 - 🎥 **In-App Filtered Video Recording**: Record video with any of the 73 retro filters applied in real-time at full frame rate. Includes hardware-accelerated H.264 video encoding (`MediaCodec`), 44.1 kHz AAC audio recording, pause/resume, and an integrated in-app video review gallery.
 - 🎛️ **RAW Video Mode & Pro Camera Controls**: Dedicated pro cinema layout giving full manual control over:
   - **ISO**: `50`, `100`, `200`, `400`, `800`, `1600`, `3200`, `6400` + fine slider.
@@ -58,8 +79,12 @@ CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic ret
 - `filter/FilterShader.kt` — AGSL runtime shader compiling all tone grades, halation, grain, light leaks, chromatic aberration, scanlines, and sync bars on-device.
 - `filter/OverlayCompositor.kt` — Frame geometry compositor managing aspect ratio cropping, Polaroid borders, and burned-in retro date stamps.
 - `filter/ShaderRenderer.kt` — Hardware-accelerated canvas rasterizer rendering shaders directly to `SurfaceView` and video encoder surfaces.
+- `theme/` — Skeuomorphic retro camera body themes:
+  - `CameraSkin.kt`: Enum definitions, tactile attributes, drawables, colors, and asset mappings for all 4 eras (`CLASSIC_1970S`, `TRANSLUCENT_NEON_90S`, `DISPOSABLE_CARDBOARD`, `GOLDEN_BRASS`).
+  - `CameraSkinManager.kt`: Persistent storage and retrieval of active skin preferences.
+  - `CameraSkinBottomSheet.kt`: Interactive bottom sheet theme selector with tactile swatch cards and active state indicators.
 - `remaster/` — AI Photo Remaster processor, face retouching, super-resolution, and before/after comparison.
-- `library/` & `gallery/` — MediaStore query engine, album organizer, duplicate photo detector, and storage management dashboard.
+- `gallery/` — Lightweight zero-permission gallery, full-screen viewer, and share integration.
 - `trip/` — Location-based photographic trip journals and memory carousels.
 
 ---
@@ -73,7 +98,8 @@ CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic ret
 | **3 Shot Ideas Button** | Browse and apply 3 distinct alternative shot compositions for the current scene |
 | **Compare Ratios Button** | View simultaneous 4:3, 4:5, and 9:16 framing boundaries on the live viewfinder |
 | **Guides Button** | Toggle Rule-of-Thirds, Symmetry, Horizon Level, Portrait Silhouette, Scrim, and Face Brackets |
-| **Mode Switcher** | Switch between `PHOTO`, `VIDEO`, and `RAW VIDEO` |
+| **Camera Skin Button** | Tap top-bar palette icon or overflow menu to switch between 4 skeuomorphic retro camera bodies |
+| **Mode Switcher** | Switch between `PHOTO`, `BOOTH` (4-Cut Film Strip), `DOUBLE` (MX Double Exposure), `VIDEO`, and `RAW VIDEO` |
 | **RAW Control Bar** | Tap `ISO`, `S`, `EV`, `FOCUS`, or `WB` chips to open the fine-tuning slider and quick presets |
 | **Tap Viewfinder** | Focus and meter on that coordinate |
 | **Pinch Viewfinder** | Smooth optical/digital zoom clamped to sensor limits |
@@ -82,13 +108,6 @@ CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic ret
 | **Category Tabs** | Filter presets by category (All, Film, Vintage, 80s/90s, Disposable, B&W, VHS, Effects) |
 | **Intensity Slider** | Adjust the effect strength from 0% to 100% |
 | **Aspect Button** | Change aspect ratio (`AUTO`, `3:4`, `4:5`, `9:16`, `1:1`, `16:9`, `2:1`, `3:2`, `FULL`) |
-| **Quality/FPS Button** | Switch video resolution (4K, 1080p, 720p, 480p) and frame rate (24, 30, 60 fps) |
-| **Pinch Viewfinder** | Smooth optical/digital zoom clamped to sensor limits |
-| **Double Tap Viewfinder** | Quick toggle between 1× wide and 2× crop |
-| **Filter Carousel** | Swipe horizontally to switch between 73 retro film looks |
-| **Category Tabs** | Filter presets by category (All, Film, Vintage, 80s/90s, Disposable, B&W, VHS, Effects) |
-| **Intensity Slider** | Adjust the effect strength from 0% to 100% |
-| **Aspect Button** | Change aspect ratio (`AUTO`, `3:4`, `9:16`, `1:1`, `16:9`, `2:1`, `3:2`, `FULL`) |
 | **Quality/FPS Button** | Switch video resolution (4K, 1080p, 720p, 480p) and frame rate (24, 30, 60 fps) |
 
 ---

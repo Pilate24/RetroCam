@@ -2,9 +2,6 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.RECORD_AUDIO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VIDEO" />
-    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <uses-feature android:name="android.hardware.camera.any" />
     <uses-feature android:name="android.hardware.microphone" android:required="false" />
 
@@ -42,17 +39,7 @@
             android:screenOrientation="portrait" />
 
         <activity
-            android:name=".library.ui.DuplicateReviewActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
-            android:name=".library.ui.StorageDashboardActivity"
-            android:exported="false"
-            android:screenOrientation="portrait" />
-
-        <activity
-            android:name=".library.ui.AlbumDetailsActivity"
+            android:name=".booth.PhotoboothActivity"
             android:exported="false"
             android:screenOrientation="portrait" />
 

@@ -34,7 +34,19 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- Double Exposure Live Ghost Overlay -->
+    <ImageView
+        android:id="@+id/doubleExposureGhostOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:scaleType="centerCrop"
+        android:alpha="0.45"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="gone" />
+
     <View
+        android:id="@+id/topScrim"
         android:layout_width="match_parent"
         android:layout_height="120dp"
         android:layout_gravity="top"
@@ -111,6 +123,12 @@
             style="@style/TopBarButton"
             android:contentDescription="Trips"
             android:src="@drawable/ic_trip" />
+
+        <ImageButton
+            android:id="@+id/skinButton"
+            style="@style/TopBarButton"
+            android:contentDescription="Camera Body Skin"
+            android:src="@drawable/ic_camera_skin" />
 
         <!-- Grid, compare and surprise live in here: reached less often than flash or timer. -->
         <ImageButton
@@ -246,6 +264,34 @@
         android:paddingBottom="5dp"
         android:textColor="@color/readout"
         android:textSize="13sp" />
+
+    <!-- Double Exposure Retake / Status Banner -->
+    <LinearLayout
+        android:id="@+id/doubleExposureBanner"
+        android:layout_width="wrap_content"
+        android:layout_height="wrap_content"
+        android:layout_gravity="center_horizontal"
+        android:layout_marginTop="112dp"
+        android:background="@drawable/zoom_pill"
+        android:clickable="true"
+        android:focusable="true"
+        android:orientation="horizontal"
+        android:paddingStart="14dp"
+        android:paddingTop="6dp"
+        android:paddingEnd="14dp"
+        android:paddingBottom="6dp"
+        android:visibility="gone">
+
+        <TextView
+            android:id="@+id/doubleExposureBannerText"
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:fontFamily="monospace"
+            android:text="EXPOSURE 2/2 · TAP TO RETAKE"
+            android:textColor="@color/amber"
+            android:textSize="11sp"
+            android:textStyle="bold" />
+    </LinearLayout>
 
 
     <!-- The camera body. Kept as short as it can be: every dp here covers live image. -->
@@ -534,62 +580,97 @@
             android:orientation="horizontal"
             android:overScrollMode="never" />
 
-        <!-- Camera Mode Switcher: PHOTO / VIDEO / RAW VIDEO -->
-        <LinearLayout
-            android:id="@+id/modeSelector"
+        <!-- Camera Mode Switcher: PHOTO / BOOTH / DOUBLE / VIDEO / RAW VIDEO -->
+        <HorizontalScrollView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
             android:layout_gravity="center_horizontal"
-            android:layout_marginTop="4dp"
-            android:layout_marginBottom="4dp"
-            android:background="@drawable/zoom_pill"
-            android:orientation="horizontal"
-            android:padding="3dp">
+            android:overScrollMode="never"
+            android:scrollbars="none">
 
-            <TextView
-                android:id="@+id/modePhoto"
+            <LinearLayout
+                android:id="@+id/modeSelector"
                 android:layout_width="wrap_content"
                 android:layout_height="wrap_content"
-                android:background="@drawable/mode_pill_selected"
-                android:fontFamily="monospace"
-                android:letterSpacing="0.1"
-                android:paddingStart="14dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="4dp"
-                android:text="@string/mode_photo"
-                android:textColor="@android:color/black"
-                android:textSize="11sp"
-                android:textStyle="bold" />
+                android:layout_marginTop="4dp"
+                android:layout_marginBottom="4dp"
+                android:background="@drawable/zoom_pill"
+                android:orientation="horizontal"
+                android:padding="3dp">
 
-            <TextView
-                android:id="@+id/modeVideo"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:letterSpacing="0.1"
-                android:paddingStart="14dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="4dp"
-                android:text="@string/mode_video"
-                android:textColor="@color/readout_dim"
-                android:textSize="11sp" />
+                <TextView
+                    android:id="@+id/modePhoto"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:background="@drawable/mode_pill_selected"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.1"
+                    android:paddingStart="14dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="4dp"
+                    android:text="@string/mode_photo"
+                    android:textColor="@android:color/black"
+                    android:textSize="11sp"
+                    android:textStyle="bold" />
 
-            <TextView
-                android:id="@+id/modeRawVideo"
-                android:layout_width="wrap_content"
-                android:layout_height="wrap_content"
-                android:fontFamily="monospace"
-                android:letterSpacing="0.1"
-                android:paddingStart="14dp"
-                android:paddingTop="4dp"
-                android:paddingEnd="14dp"
-                android:paddingBottom="4dp"
-                android:text="@string/mode_raw_video"
-                android:textColor="@color/readout_dim"
-                android:textSize="11sp" />
-        </LinearLayout>
+                <TextView
+                    android:id="@+id/modeBooth"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.1"
+                    android:paddingStart="14dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="4dp"
+                    android:text="@string/mode_booth"
+                    android:textColor="@color/readout_dim"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/modeDouble"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.1"
+                    android:paddingStart="14dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="4dp"
+                    android:text="@string/mode_double"
+                    android:textColor="@color/readout_dim"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/modeVideo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.1"
+                    android:paddingStart="14dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="4dp"
+                    android:text="@string/mode_video"
+                    android:textColor="@color/readout_dim"
+                    android:textSize="11sp" />
+
+                <TextView
+                    android:id="@+id/modeRawVideo"
+                    android:layout_width="wrap_content"
+                    android:layout_height="wrap_content"
+                    android:fontFamily="monospace"
+                    android:letterSpacing="0.1"
+                    android:paddingStart="14dp"
+                    android:paddingTop="4dp"
+                    android:paddingEnd="14dp"
+                    android:paddingBottom="4dp"
+                    android:text="@string/mode_raw_video"
+                    android:textColor="@color/readout_dim"
+                    android:textSize="11sp" />
+            </LinearLayout>
+        </HorizontalScrollView>
 
         <FrameLayout
             android:layout_width="match_parent"
@@ -698,6 +779,16 @@
             android:textColor="@color/amber"
             android:visibility="gone" />
     </LinearLayout>
+
+    <!-- Front Camera Screen Flash Overlay -->
+    <View
+        android:id="@+id/screenFlashOverlay"
+        android:layout_width="match_parent"
+        android:layout_height="match_parent"
+        android:background="#FFFFF6EB"
+        android:clickable="false"
+        android:focusable="false"
+        android:visibility="gone" />
 
     <!-- Camera Error / Initializing Overlay -->
     <LinearLayout

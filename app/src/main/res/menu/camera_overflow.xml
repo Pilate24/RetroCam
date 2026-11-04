@@ -21,4 +21,7 @@
     <item
         android:id="@+id/menuTrips"
         android:title="Trips &amp; Memories" />
+    <item
+        android:id="@+id/menuSkin"
+        android:title="🎨 Camera Body Skin" />
 </menu>

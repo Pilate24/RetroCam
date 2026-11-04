@@ -1,0 +1,59 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Golden Brass Rangefinder: Vintage Leica-inspired brass body with etched bevels & warm patina -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Machined golden brass plate with aged patina gradient -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#F2855718"
+                android:centerColor="#F25A390A"
+                android:endColor="#F2422705" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+    <!-- Etched antique tool mark border -->
+    <item
+        android:left="1dp"
+        android:top="2dp"
+        android:right="1dp"
+        android:bottom="0dp">
+        <shape android:shape="rectangle">
+            <stroke
+                android:width="1dp"
+                android:color="#4DD4AF37" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+            <solid android:color="#00000000" />
+        </shape>
+    </item>
+    <!-- Polished golden brass top plate bevel -->
+    <item
+        android:height="3dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="0"
+                android:startColor="#8092631E"
+                android:centerColor="#FFD4AF37"
+                android:endColor="#8092631E" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+    <!-- Burnished gold specular edge hairline -->
+    <item
+        android:height="1dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFFEF3C7" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+</layer-list>

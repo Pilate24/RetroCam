@@ -651,16 +651,6 @@ class RemasterActivity : AppCompatActivity() {
             bitmap.compress(format, quality, out)
         }
 
-        val src = sourceUri
-        if (src != null) {
-            try {
-                com.retrocam.app.library.repository.MediaLibraryRepository.getInstance(this)
-                    .recordEditedCopy(src.toString(), uri, displayName)
-            } catch (e: Exception) {
-                // non-fatal
-            }
-        }
-
         // Add to active trip if present
         val activeTrip = tripRepository.getActiveTrip()
         if (activeTrip != null) {

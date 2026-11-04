@@ -1,0 +1,62 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Disposable Camera Cardboard Wrap: Graphic printed cardboard box look with bright yellow/red accents -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Golden packaging cardboard yellow body -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#FFFBBF24"
+                android:centerColor="#FFF59E0B"
+                android:endColor="#FFD97706" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+    <!-- Bold printed graphic racing red band (classic single-use packaging look) -->
+    <item
+        android:height="10dp"
+        android:top="16dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFDC2626" />
+        </shape>
+    </item>
+    <!-- Crisp black packaging separator line -->
+    <item
+        android:height="2dp"
+        android:top="26dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FF1F2937" />
+        </shape>
+    </item>
+    <!-- Cardboard folded seam / edge border -->
+    <item
+        android:left="1dp"
+        android:top="1dp"
+        android:right="1dp"
+        android:bottom="0dp">
+        <shape android:shape="rectangle">
+            <stroke
+                android:width="2dp"
+                android:color="#FFB45309" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+            <solid android:color="#00000000" />
+        </shape>
+    </item>
+    <!-- Top red paper crease -->
+    <item
+        android:height="3dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFDC2626" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+</layer-list>

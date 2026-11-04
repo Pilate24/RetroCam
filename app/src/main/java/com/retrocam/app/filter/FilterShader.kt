@@ -223,6 +223,34 @@ object FilterShader {
             return c * (max(l - threshold, 0.0) / max(1.0 - threshold, 0.001));
         }
 
+        // Bloom sampler: applies brightPass to each tap so optical halation and glow
+        // radiate outward from highlights onto surrounding darker pixels.
+        float3 bloomAt(float2 coord, float radius, float threshold) {
+            float d = radius * 0.7071;
+            float3 sum = brightPass(sampleInput(coord), threshold) * 2.0;
+            sum += brightPass(sampleInput(coord + float2( radius, 0.0)), threshold);
+            sum += brightPass(sampleInput(coord + float2(-radius, 0.0)), threshold);
+            sum += brightPass(sampleInput(coord + float2(0.0,  radius)), threshold);
+            sum += brightPass(sampleInput(coord + float2(0.0, -radius)), threshold);
+            sum += brightPass(sampleInput(coord + float2( d,  d)), threshold);
+            sum += brightPass(sampleInput(coord + float2( d, -d)), threshold);
+            sum += brightPass(sampleInput(coord + float2(-d,  d)), threshold);
+            sum += brightPass(sampleInput(coord + float2(-d, -d)), threshold);
+            return sum / 10.0;
+        }
+
+        // Continuous value noise for organic film grain clumping across any resolution.
+        float filmGrain(float2 p) {
+            float2 i = floor(p);
+            float2 f = fract(p);
+            float2 u = f * f * (3.0 - 2.0 * f);
+            float a = hash(i);
+            float b = hash(i + float2(1.0, 0.0));
+            float c = hash(i + float2(0.0, 1.0));
+            float d = hash(i + float2(1.0, 1.0));
+            return mix(mix(a, b, u.x), mix(c, d, u.x), u.y) - 0.5;
+        }
+
         // Sparse specks on a jittered grid: position, radius and opacity all derive from the cell,
         // so nothing lines up into a visible lattice and each seed gives a different scattering.
         float dustAt(float2 uv, float density, float aspect) {
@@ -402,39 +430,46 @@ object FilterShader {
             }
 
             // --- 9. micro contrast, then sharpening ----------------------------------------
+            float3 rawCenter = sampleInput(sampleCoord);
             if (clarity != 0.0) {
                 float3 wide = blurAt(sampleCoord, shortSide * 0.02);
-                color += (color - wide) * clarity;
+                float lumaDiff = dot(rawCenter - wide, LUMA);
+                color += lumaDiff * clarity;
             }
             if (microContrast != 0.0) {
                 // Narrower radius than clarity: the crisp "bite" that separates a Ricoh or Leica
                 // rendering from a soft one, without clarity's halo around large edges.
                 float3 near = blurAt(sampleCoord, shortSide * 0.006);
-                color += (color - near) * microContrast;
+                float lumaNear = dot(rawCenter - near, LUMA);
+                color += lumaNear * microContrast;
             }
             if (sharpness > 0.0) {
                 float3 soft = blurAt(sampleCoord, shortSide * 0.0018);
-                color += (color - soft) * sharpness * 2.0;
+                float lumaSoft = dot(rawCenter - soft, LUMA);
+                color += lumaSoft * (sharpness * 2.0);
             }
 
             // --- 10. colour bleed ----------------------------------------------------------
             if (colorBleed > 0.0) {
-                // Smear chroma sideways while keeping luma sharp — how composite video looks.
-                float3 smeared = blurAt(sampleCoord, colorBleed * shortSide * 0.012);
+                // Smear chroma horizontally along scanlines while keeping luma sharp — true composite video tape look.
+                float dx = colorBleed * shortSide * 0.015;
+                float3 smeared = (sampleInput(sampleCoord - float2(dx, 0.0)) +
+                                  sampleInput(sampleCoord) * 2.0 +
+                                  sampleInput(sampleCoord + float2(dx, 0.0))) * 0.25;
                 float l = dot(color, LUMA);
                 float3 smearedChroma = smeared - float3(dot(smeared, LUMA));
-                color = float3(l) + mix(color - float3(l), smearedChroma, colorBleed);
+                color = float3(l) + mix(color - float3(l), smearedChroma, clamp(colorBleed, 0.0, 1.0));
             }
 
             // --- 11. light -----------------------------------------------------------------
             if (halationAmount > 0.0) {
-                float3 bloom = brightPass(
-                    blurAt(fragCoord, halationRadius * shortSide * 0.01), halationThreshold
+                float3 bloom = bloomAt(
+                    sampleCoord, halationRadius * shortSide * 0.01, halationThreshold
                 );
                 color += bloom * halationAmount * float3(1.0, 0.42, 0.22);
             }
             if (glowAmount > 0.0) {
-                float3 bloom = brightPass(blurAt(fragCoord, shortSide * 0.025), glowThreshold);
+                float3 bloom = bloomAt(sampleCoord, shortSide * 0.025, glowThreshold);
                 color += bloom * glowAmount;
             }
             if (leakAmount > 0.0) {
@@ -474,16 +509,16 @@ object FilterShader {
 
             // --- 13. film artefacts --------------------------------------------------------
             if (grainAmount > 0.0) {
-                float scale = 1300.0 / max(grainSize, 0.05);
+                float scale = 1100.0 / max(grainSize, 0.05);
                 float2 grainCoord = float2(uv.x * aspect, uv.y) * scale
                     + float2(seed * 71.0, seed * 113.0);
-                float g = hash(grainCoord) - 0.5;
+                float g = filmGrain(grainCoord);
 
                 // Real film grain lives in the density curve: strong in the toe and mid, quiet in
                 // the shoulder. That also keeps it off skin and bright sky, which is where obvious
                 // grain reads as digital noise rather than film.
                 float l = dot(clamp(color, float3(0.0), float3(1.0)), LUMA);
-                float weight = mix(1.0, 0.45, smoothstep(0.32, 0.85, l));
+                float weight = mix(1.0, 0.40, smoothstep(0.28, 0.85, l));
                 color += g * grainAmount * weight;
             }
             if (dustAmount > 0.0) {
@@ -496,7 +531,7 @@ object FilterShader {
             // --- 14. vignette --------------------------------------------------------------
             if (vignetteAmount > 0.0) {
                 float2 v = centered * float2(aspect, 1.0);
-                color *= clamp(1.0 - vignetteAmount * dot(v, v) * 2.0, 0.0, 1.0);
+                color *= clamp(1.0 - vignetteAmount * dot(v, v) * 1.6, 0.0, 1.0);
             }
 
             return half4(half3(clamp(softLimit(color), float3(0.0), float3(1.0))), 1.0);

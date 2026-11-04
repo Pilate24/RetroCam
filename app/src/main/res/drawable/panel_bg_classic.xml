@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1970s Classic: Matte black leatherette with brushed chrome metal top-bevel. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <!-- Base leatherette slab -->
+    <item>
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="270"
+                android:startColor="#F218181A"
+                android:endColor="#F2101012" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+    <!-- Dark milled shadow below the chrome plate -->
+    <item
+        android:top="2dp"
+        android:bottom="0dp">
+        <shape android:shape="rectangle">
+            <stroke
+                android:width="1dp"
+                android:color="#33000000" />
+            <solid android:color="#00000000" />
+        </shape>
+    </item>
+    <!-- Brushed chrome top bevel line -->
+    <item
+        android:height="2.5dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <gradient
+                android:angle="0"
+                android:startColor="#809CA3AF"
+                android:centerColor="#FFE5E7EB"
+                android:endColor="#809CA3AF" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+    <!-- Fine chrome hairline highlight -->
+    <item
+        android:height="1dp"
+        android:gravity="top">
+        <shape android:shape="rectangle">
+            <solid android:color="#FFF9FAFB" />
+            <corners
+                android:topLeftRadius="22dp"
+                android:topRightRadius="22dp" />
+        </shape>
+    </item>
+</layer-list>

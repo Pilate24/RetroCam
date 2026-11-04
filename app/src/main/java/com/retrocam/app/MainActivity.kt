@@ -4,6 +4,7 @@ import android.Manifest
 import android.app.Activity
 import android.content.ContentValues
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.content.pm.PackageManager
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -62,7 +63,11 @@ import com.retrocam.app.director.detector.HorizonSensorDetector
 import com.retrocam.app.director.engine.ShotDirectorEngine
 import com.retrocam.app.director.model.AspectRatioOption
 import com.retrocam.app.director.model.CameraCapabilities
+import android.media.MediaActionSound
+import com.retrocam.app.booth.PhotoboothActivity
 import com.retrocam.app.director.ui.ShotDirectorController
+import java.io.File
+import com.retrocam.app.filter.DoubleExposureCompositor
 import com.retrocam.app.filter.FilterPreset
 import com.retrocam.app.filter.OverlayCompositor
 import com.retrocam.app.filter.PresetRepository
@@ -72,6 +77,9 @@ import com.retrocam.app.trip.Trip
 import com.retrocam.app.trip.TripDetailsActivity
 import com.retrocam.app.trip.TripRepository
 import com.retrocam.app.trip.TripsActivity
+import com.retrocam.app.theme.CameraSkin
+import com.retrocam.app.theme.CameraSkinBottomSheet
+import com.retrocam.app.theme.CameraSkinManager
 import com.retrocam.app.ui.CategoryAdapter
 import com.retrocam.app.ui.CompareActivity
 import com.retrocam.app.ui.CompareFrame
@@ -90,7 +98,7 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
-    enum class CameraMode { PHOTO, VIDEO, RAW_VIDEO }
+    enum class CameraMode { PHOTO, VIDEO, RAW_VIDEO, BOOTH, DOUBLE }
 
     enum class ProParam { ISO, SHUTTER, EV, FOCUS, WB }
 
@@ -100,6 +108,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tripRepository: TripRepository
     private val proCameraManager = ProCameraManager()
     private var activeProParam: ProParam? = null
+    private var activeSkin = CameraSkin.DEFAULT
 
     private var cameraMode = CameraMode.PHOTO
     private val isVideoMode: Boolean
@@ -214,6 +223,9 @@ class MainActivity : AppCompatActivity() {
         setUpPermissionUI()
         setUpShotDirector()
 
+        activeSkin = CameraSkinManager.getSavedSkin(this)
+        applySkin(activeSkin)
+
         tripRepository = TripRepository.getInstance(this)
 
         binding.tripsButton.setOnClickListener {
@@ -300,24 +312,44 @@ class MainActivity : AppCompatActivity() {
                 switchToMode(CameraMode.RAW_VIDEO)
             }
         }
+
+        binding.modeBooth.setOnClickListener {
+            if (cameraMode != CameraMode.BOOTH) {
+                switchToMode(CameraMode.BOOTH)
+            }
+        }
+
+        binding.modeDouble.setOnClickListener {
+            if (cameraMode != CameraMode.DOUBLE) {
+                switchToMode(CameraMode.DOUBLE)
+            }
+        }
     }
 
     private fun updateModePills(mode: CameraMode) {
         val selectedPill = when (mode) {
             CameraMode.PHOTO -> binding.modePhoto
+            CameraMode.BOOTH -> binding.modeBooth
+            CameraMode.DOUBLE -> binding.modeDouble
             CameraMode.VIDEO -> binding.modeVideo
             CameraMode.RAW_VIDEO -> binding.modeRawVideo
         }
 
-        val allPills = listOf(binding.modePhoto, binding.modeVideo, binding.modeRawVideo)
+        val allPills = listOf(
+            binding.modePhoto,
+            binding.modeBooth,
+            binding.modeDouble,
+            binding.modeVideo,
+            binding.modeRawVideo
+        )
         for (pill in allPills) {
             if (pill == selectedPill) {
-                pill.setBackgroundResource(R.drawable.mode_pill_selected)
-                pill.setTextColor(Color.BLACK)
+                pill.setBackgroundResource(activeSkin.modePillSelectedRes)
+                pill.setTextColor(activeSkin.selectedPillTextColor)
                 pill.setTypeface(null, android.graphics.Typeface.BOLD)
             } else {
                 pill.background = null
-                pill.setTextColor(ContextCompat.getColor(this, R.color.readout_dim))
+                pill.setTextColor(activeSkin.unselectedPillTextColor)
                 pill.setTypeface(null, android.graphics.Typeface.NORMAL)
             }
         }
@@ -329,9 +361,17 @@ class MainActivity : AppCompatActivity() {
         cameraMode = mode
         updateModePills(mode)
 
-        if (mode == CameraMode.PHOTO) {
-            binding.shutterButton.setBackgroundResource(R.drawable.shutter_button)
-            binding.shutterButton.contentDescription = getString(R.string.shutter)
+        if (prevMode == CameraMode.DOUBLE && mode != CameraMode.DOUBLE) {
+            resetDoubleExposure()
+        }
+
+        if (mode == CameraMode.PHOTO || mode == CameraMode.BOOTH || mode == CameraMode.DOUBLE) {
+            binding.shutterButton.setBackgroundResource(activeSkin.shutterButtonRes)
+            binding.shutterButton.contentDescription = when (mode) {
+                CameraMode.BOOTH -> "Start Photo Booth"
+                CameraMode.DOUBLE -> "Capture Double Exposure"
+                else -> getString(R.string.shutter)
+            }
 
             binding.videoPreviewView.visibility = View.GONE
             binding.viewFinder.visibility = View.VISIBLE
@@ -343,13 +383,21 @@ class MainActivity : AppCompatActivity() {
             binding.galleryButton.visibility = View.VISIBLE
 
             binding.topBar.visibility = View.VISIBLE
-            binding.timerButton.visibility = View.VISIBLE
+            binding.timerButton.visibility = if (mode == CameraMode.BOOTH || mode == CameraMode.DOUBLE) View.GONE else View.VISIBLE
             binding.videoQualityButton.visibility = View.GONE
             binding.rawControlBar.visibility = View.GONE
             binding.rawAdjustPanel.visibility = View.GONE
 
             camera?.let { proCameraManager.resetToAuto(it) }
-            startCamera()
+            if (prevMode == CameraMode.VIDEO || prevMode == CameraMode.RAW_VIDEO) {
+                startCamera()
+            }
+            if (mode == CameraMode.BOOTH) {
+                setStatus(R.string.photobooth_title)
+            } else if (mode == CameraMode.DOUBLE) {
+                resetDoubleExposure()
+                setStatus(R.string.double_exposure_title)
+            }
         } else if (mode == CameraMode.VIDEO) {
             binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
             binding.shutterButton.contentDescription = getString(R.string.record_video)
@@ -402,6 +450,7 @@ class MainActivity : AppCompatActivity() {
                 camera?.let { proCameraManager.apply(it) }
             }
         }
+        updateFlashState()
     }
 
     private fun setUpProControls() {
@@ -742,11 +791,17 @@ class MainActivity : AppCompatActivity() {
 
     private fun setUpShutterAndControls() {
         binding.shutterButton.setOnClickListener {
-            if (cameraMode == CameraMode.PHOTO) {
-                takePhoto()
-            } else {
-                handleVideoRecordClick()
+            when (cameraMode) {
+                CameraMode.PHOTO -> takePhoto()
+                CameraMode.BOOTH -> startPhotoboothSession()
+                CameraMode.DOUBLE -> handleDoubleExposureShutter()
+                CameraMode.VIDEO, CameraMode.RAW_VIDEO -> handleVideoRecordClick()
             }
+        }
+
+        binding.doubleExposureBanner.setOnClickListener {
+            resetDoubleExposure()
+            toast(getString(R.string.double_exposure_retake_toast))
         }
 
         binding.pauseResumeButton.setOnClickListener {
@@ -1150,7 +1205,8 @@ class MainActivity : AppCompatActivity() {
             .build()
 
         val capture = ImageCapture.Builder()
-            .setCaptureMode(ImageCapture.CAPTURE_MODE_MINIMIZE_LATENCY)
+            .setCaptureMode(ImageCapture.CAPTURE_MODE_MAXIMIZE_QUALITY)
+            .setFlashMode(flash.mode)
             .setResolutionSelector(captureResolutionSelector)
             .build()
         imageCapture = capture
@@ -1158,6 +1214,7 @@ class MainActivity : AppCompatActivity() {
         camera = provider.bindToLifecycle(
             this, cameraSelector, analysis, capture
         )
+        updateFlashState()
     }
 
     @androidx.annotation.OptIn(ExperimentalCamera2Interop::class)
@@ -1193,6 +1250,7 @@ class MainActivity : AppCompatActivity() {
         camera = provider.bindToLifecycle(
             this, cameraSelector, analysis
         )
+        updateFlashState()
     }
 
     private fun showCameraError(message: String) {
@@ -1253,23 +1311,46 @@ class MainActivity : AppCompatActivity() {
 
     private enum class FlashChoice(val label: String, val mode: Int, val icon: Int) {
         OFF("off", ImageCapture.FLASH_MODE_OFF, R.drawable.ic_flash_off),
-        AUTO("auto", ImageCapture.FLASH_MODE_AUTO, R.drawable.ic_flash_on),
+        AUTO("auto", ImageCapture.FLASH_MODE_AUTO, R.drawable.ic_flash_auto),
         ON("on", ImageCapture.FLASH_MODE_ON, R.drawable.ic_flash_on)
+    }
+
+    private fun updateFlashState() {
+        val hasFlash = camera?.cameraInfo?.hasFlashUnit() == true
+        if (cameraMode == CameraMode.PHOTO) {
+            try {
+                camera?.cameraControl?.enableTorch(false)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed disabling torch in photo mode", e)
+            }
+            imageCapture?.let { capture ->
+                capture.flashMode = if (hasFlash) flash.mode else ImageCapture.FLASH_MODE_OFF
+            }
+        } else {
+            // Video / Raw Video mode: enable continuous torch if flash is ON and camera has flash unit
+            try {
+                val enableTorch = hasFlash && (flash == FlashChoice.ON)
+                camera?.cameraControl?.enableTorch(enableTorch)
+            } catch (e: Exception) {
+                Log.w(TAG, "Failed setting torch in video mode", e)
+            }
+        }
+        binding.flashButton.setImageResource(flash.icon)
+        binding.flashButton.alpha = if (flash == FlashChoice.OFF) 0.65f else 1f
     }
 
     private fun setUpTopBar() {
         binding.flashButton.setOnClickListener {
             flash = FlashChoice.entries[(flash.ordinal + 1) % FlashChoice.entries.size]
-            imageCapture?.flashMode = flash.mode
-            if (isVideoMode) {
-                // Torch mode for video
-                camera?.cameraControl?.enableTorch(flash == FlashChoice.ON)
+            updateFlashState()
+            val notice = if (isFrontCamera() && flash != FlashChoice.OFF) {
+                "Screen flash ${flash.label}"
+            } else {
+                getString(R.string.flash_toast, flash.label)
             }
-            binding.flashButton.setImageResource(flash.icon)
-            binding.flashButton.alpha = if (flash == FlashChoice.OFF) 0.65f else 1f
-            toast(getString(R.string.flash_toast, flash.label))
+            toast(notice)
         }
-        binding.flashButton.alpha = 0.65f
+        updateFlashState()
 
         binding.timerButton.setOnClickListener {
             if (isVideoMode) {
@@ -1300,6 +1381,7 @@ class MainActivity : AppCompatActivity() {
             toast(if (newState) "AI Shot Director enabled" else "AI Shot Director disabled")
         }
 
+        binding.skinButton.setOnClickListener { showSkinSelector() }
         binding.overflowButton.setOnClickListener { showOverflow(it) }
     }
 
@@ -1466,11 +1548,89 @@ class MainActivity : AppCompatActivity() {
                         startActivity(Intent(this@MainActivity, TripsActivity::class.java))
                         true
                     }
+                    R.id.menuSkin -> {
+                        showSkinSelector()
+                        true
+                    }
                     else -> false
                 }
             }
             show()
         }
+    }
+
+    private fun showSkinSelector() {
+        CameraSkinBottomSheet.newInstance { selectedSkin ->
+            applySkin(selectedSkin)
+            toast("${selectedSkin.displayName} body applied")
+        }.show(supportFragmentManager, CameraSkinBottomSheet.TAG)
+    }
+
+    private fun applySkin(skin: CameraSkin) {
+        activeSkin = skin
+        binding.topScrim.setBackgroundResource(skin.topScrimRes)
+        binding.cameraBody.setBackgroundResource(skin.bodyBackgroundRes)
+        binding.modeSelector.setBackgroundResource(skin.modeSelectorBgRes)
+        binding.readoutRow.setBackgroundResource(skin.readoutBgRes)
+        binding.rawAdjustPanel.setBackgroundResource(skin.readoutBgRes)
+        binding.doubleExposureBanner.setBackgroundResource(skin.modeSelectorBgRes)
+        binding.statusChip.setBackgroundResource(skin.modeSelectorBgRes)
+        binding.zoomLabel.setBackgroundResource(skin.modeSelectorBgRes)
+
+        updateModePills(cameraMode)
+
+        if (cameraMode == CameraMode.PHOTO || cameraMode == CameraMode.BOOTH || cameraMode == CameraMode.DOUBLE) {
+            binding.shutterButton.setBackgroundResource(skin.shutterButtonRes)
+        }
+
+        binding.intensityLabel.setTextColor(skin.accentColor)
+        binding.doubleExposureBannerText.setTextColor(skin.accentColor)
+        binding.statusChip.setTextColor(skin.accentColor)
+        binding.rawAdjustTitle.setTextColor(skin.accentColor)
+        binding.rawAutoButton.setBackgroundResource(skin.modePillSelectedRes)
+        binding.rawAutoButton.setTextColor(skin.selectedPillTextColor)
+
+        val thumbList = ColorStateList.valueOf(skin.sliderThumbColor)
+        val activeList = ColorStateList.valueOf(skin.sliderTrackActiveColor)
+        val inactiveList = ColorStateList.valueOf(skin.sliderTrackInactiveColor)
+
+        binding.intensitySlider.thumbTintList = thumbList
+        binding.intensitySlider.trackActiveTintList = activeList
+        binding.intensitySlider.trackInactiveTintList = inactiveList
+
+        binding.rawSlider.thumbTintList = thumbList
+        binding.rawSlider.trackActiveTintList = activeList
+        binding.rawSlider.trackInactiveTintList = inactiveList
+
+        val proChips = listOf(
+            binding.chipIso,
+            binding.chipShutter,
+            binding.chipEv,
+            binding.chipFocus,
+            binding.chipWb,
+            binding.chipAperture,
+            binding.buttonRawReset
+        )
+        for (chip in proChips) {
+            chip.setBackgroundResource(skin.proChipBgRes)
+            if (chip != binding.buttonRawReset) {
+                chip.setTextColor(skin.chipTextColor)
+            } else {
+                chip.setTextColor(skin.accentColor)
+            }
+        }
+
+        val tintList = ColorStateList.valueOf(skin.iconTint)
+        binding.flashButton.imageTintList = tintList
+        binding.timerButton.imageTintList = tintList
+        binding.aspectButton.setTextColor(skin.iconTint)
+        binding.videoQualityButton.setTextColor(skin.iconTint)
+        binding.skinButton.imageTintList = tintList
+        binding.directorToggleButton.imageTintList = tintList
+        binding.tripsButton.imageTintList = tintList
+        binding.overflowButton.imageTintList = tintList
+        binding.galleryButton.imageTintList = tintList
+        binding.flipCameraButton.imageTintList = tintList
     }
 
     private fun openCompare() {
@@ -1908,42 +2068,455 @@ class MainActivity : AppCompatActivity() {
 
     private fun capturePhoto() {
         countingDown = false
-        binding.shutterButton.isEnabled = true
-
         val capture = imageCapture ?: return
         val preset = (if (surpriseMode) rollRandomPreset() else activePreset) ?: return
+
+        binding.shutterButton.isEnabled = false
         setStatus(R.string.status_saving)
 
+        val isFront = isFrontCamera()
+        val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
+        val useScreenFlash = (isFront || !hasPhysicalFlash) && (flash != FlashChoice.OFF)
+
+        if (useScreenFlash) {
+            val window = window
+            val prevBrightness = window.attributes.screenBrightness
+            val lp = window.attributes
+            lp.screenBrightness = 1.0f
+            window.attributes = lp
+
+            binding.screenFlashOverlay.visibility = View.VISIBLE
+            binding.screenFlashOverlay.alpha = 1.0f
+
+            val restoreScreen = {
+                runOnUiThread {
+                    binding.screenFlashOverlay.visibility = View.GONE
+                    val resetLp = window.attributes
+                    resetLp.screenBrightness = prevBrightness
+                    window.attributes = resetLp
+                    binding.shutterButton.isEnabled = true
+                }
+            }
+
+            // Allow 200ms for screen illumination and camera AE convergence
+            binding.screenFlashOverlay.postDelayed({
+                capture.flashMode = ImageCapture.FLASH_MODE_OFF
+                executeSingleCapture(capture, restoreScreen) { rawBitmap, rotation, isFrontCam ->
+                    processAndSavePhoto(rawBitmap, rotation, isFrontCam, preset)
+                }
+            }, 200L)
+        } else {
+            // Back camera with physical flash or flash is off
+            capture.flashMode = if (hasPhysicalFlash) flash.mode else ImageCapture.FLASH_MODE_OFF
+            executeSingleCapture(capture, onComplete = { runOnUiThread { binding.shutterButton.isEnabled = true } }) { rawBitmap, rotation, isFrontCam ->
+                processAndSavePhoto(rawBitmap, rotation, isFrontCam, preset)
+            }
+        }
+    }
+
+    private fun processAndSavePhoto(
+        rawBitmap: Bitmap,
+        rotation: Int,
+        isFront: Boolean,
+        preset: FilterPreset
+    ) {
+        val uprightW = if (rotation == 90 || rotation == 270) rawBitmap.height else rawBitmap.width
+        val uprightH = if (rotation == 90 || rotation == 270) rawBitmap.width else rawBitmap.height
+
+        val renderer = ShaderRenderer(uprightW, uprightH)
+        val filtered = try {
+            renderer.render(rawBitmap, Random.nextFloat() * 100f, preset, rotation, isFront)
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "Could not filter the captured photo", e)
+            return
+        } finally {
+            rawBitmap.recycle()
+            renderer.close()
+        }
+
+        val composed = OverlayCompositor.compose(filtered, preset, Date())
+        saveToGallery(composed, preset, revealName = surpriseMode)
+        if (composed !== filtered) filtered.recycle()
+    }
+
+    private fun executeSingleCapture(
+        capture: ImageCapture,
+        onComplete: (() -> Unit)?,
+        onImageReady: (Bitmap, Int, Boolean) -> Unit
+    ) {
         capture.takePicture(cameraExecutor, object : ImageCapture.OnImageCapturedCallback() {
             override fun onCaptureSuccess(image: ImageProxy) {
+                onComplete?.invoke()
                 val rawBitmap = image.toBitmap()
                 val rotation = image.imageInfo.rotationDegrees
                 val isFront = isFrontCamera()
-                val uprightW = if (rotation == 90 || rotation == 270) image.height else image.width
-                val uprightH = if (rotation == 90 || rotation == 270) image.width else image.height
                 image.close()
-
-                val renderer = ShaderRenderer(uprightW, uprightH)
-                val filtered = try {
-                    renderer.render(rawBitmap, Random.nextFloat() * 100f, preset, rotation, isFront)
-                } catch (e: RuntimeException) {
-                    Log.e(TAG, "Could not filter the captured photo", e)
-                    return
-                } finally {
-                    rawBitmap.recycle()
-                    renderer.close()
-                }
-
-                val composed = OverlayCompositor.compose(filtered, preset, Date())
-                saveToGallery(composed, preset, revealName = surpriseMode)
-                if (composed !== filtered) filtered.recycle()
+                onImageReady(rawBitmap, rotation, isFront)
             }
 
             override fun onError(exception: ImageCaptureException) {
+                onComplete?.invoke()
                 Log.e(TAG, "Capture failed", exception)
-                runOnUiThread { setStatus(R.string.status_ready) }
+                runOnUiThread {
+                    binding.shutterButton.isEnabled = true
+                    setStatus(R.string.status_ready)
+                }
             }
         })
+    }
+
+    // --- Photobooth Mode (4-Cut Film Strip) ---------------------------------
+
+    private var isPhotoboothActive = false
+    private val boothFiles = mutableListOf<File>()
+    private val shutterSound by lazy { MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) } }
+
+    private fun startPhotoboothSession() {
+        if (isPhotoboothActive) return
+        val capture = imageCapture ?: return
+        val preset = (if (surpriseMode) rollRandomPreset() else activePreset) ?: return
+
+        isPhotoboothActive = true
+        binding.shutterButton.isEnabled = false
+        boothFiles.clear()
+
+        val boothDir = File(cacheDir, "photobooth").apply {
+            if (exists()) deleteRecursively()
+            mkdirs()
+        }
+
+        executeBoothPose(capture, preset, poseIndex = 1, totalPoses = 4, boothDir = boothDir)
+    }
+
+    private fun executeBoothPose(
+        capture: ImageCapture,
+        preset: FilterPreset,
+        poseIndex: Int,
+        totalPoses: Int,
+        boothDir: File
+    ) {
+        if (!isPhotoboothActive) return
+
+        val posePrompt = when (poseIndex) {
+            1 -> "GET READY!\nPOSE 1 OF 4"
+            2 -> "NICE!\nPOSE 2 OF 4"
+            3 -> "LOOK GREAT!\nPOSE 3 OF 4"
+            else -> "FINAL POSE!\nPOSE 4 OF 4"
+        }
+        binding.countdownLabel.text = posePrompt
+        binding.countdownLabel.alpha = 1f
+        binding.countdownLabel.scaleX = 1.2f
+        binding.countdownLabel.scaleY = 1.2f
+        binding.countdownLabel.animate().scaleX(1f).scaleY(1f).setDuration(250).start()
+
+        binding.countdownLabel.postDelayed({
+            runBoothCountdown(3) {
+                captureBoothShot(capture, preset, poseIndex, totalPoses, boothDir)
+            }
+        }, 1200L)
+    }
+
+    private fun runBoothCountdown(remaining: Int, onZero: () -> Unit) {
+        if (!isPhotoboothActive) return
+        if (remaining <= 0) {
+            binding.countdownLabel.animate().alpha(0f).setDuration(150).start()
+            onZero()
+            return
+        }
+        binding.countdownLabel.text = remaining.toString()
+        binding.countdownLabel.alpha = 1f
+        binding.countdownLabel.scaleX = 1.4f
+        binding.countdownLabel.scaleY = 1.4f
+        binding.countdownLabel.animate().scaleX(1f).scaleY(1f).setDuration(300).start()
+        binding.countdownLabel.postDelayed({ runBoothCountdown(remaining - 1, onZero) }, 1000L)
+    }
+
+    private fun captureBoothShot(
+        capture: ImageCapture,
+        preset: FilterPreset,
+        poseIndex: Int,
+        totalPoses: Int,
+        boothDir: File
+    ) {
+        setStatus(R.string.status_saving)
+        try {
+            shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+        } catch (e: Exception) {
+            // Ignored
+        }
+
+        val isFront = isFrontCamera()
+        val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
+        val useScreenFlash = (isFront || !hasPhysicalFlash) && (flash != FlashChoice.OFF)
+
+        val onPhotoCaptured: (Bitmap, Int, Boolean) -> Unit = { rawBitmap, rotation, isFrontCam ->
+            val uprightW = if (rotation == 90 || rotation == 270) rawBitmap.height else rawBitmap.width
+            val uprightH = if (rotation == 90 || rotation == 270) rawBitmap.width else rawBitmap.height
+
+            val renderer = ShaderRenderer(uprightW, uprightH)
+            val filtered = try {
+                renderer.render(rawBitmap, Random.nextFloat() * 100f, preset, rotation, isFrontCam)
+            } catch (e: RuntimeException) {
+                Log.e(TAG, "Photobooth filtering failed", e)
+                rawBitmap
+            } finally {
+                renderer.close()
+            }
+
+            val targetFile = File(boothDir, "pose_${poseIndex}.jpg")
+            try {
+                targetFile.outputStream().use { out ->
+                    filtered.compress(Bitmap.CompressFormat.JPEG, 92, out)
+                }
+                boothFiles.add(targetFile)
+            } catch (e: Exception) {
+                Log.e(TAG, "Failed saving booth pose", e)
+            } finally {
+                if (filtered !== rawBitmap) filtered.recycle()
+                rawBitmap.recycle()
+            }
+
+            runOnUiThread {
+                setStatus(R.string.photobooth_title)
+                if (poseIndex < totalPoses) {
+                    binding.countdownLabel.postDelayed({
+                        executeBoothPose(capture, preset, poseIndex + 1, totalPoses, boothDir)
+                    }, 800L)
+                } else {
+                    finishPhotoboothSession(preset.name)
+                }
+            }
+        }
+
+        if (useScreenFlash) {
+            val window = window
+            val prevBrightness = window.attributes.screenBrightness
+            val lp = window.attributes
+            lp.screenBrightness = 1.0f
+            window.attributes = lp
+            binding.screenFlashOverlay.visibility = View.VISIBLE
+            binding.screenFlashOverlay.alpha = 1.0f
+
+            val restoreScreen = {
+                runOnUiThread {
+                    binding.screenFlashOverlay.visibility = View.GONE
+                    val resetLp = window.attributes
+                    resetLp.screenBrightness = prevBrightness
+                    window.attributes = resetLp
+                }
+            }
+
+            binding.screenFlashOverlay.postDelayed({
+                capture.flashMode = ImageCapture.FLASH_MODE_OFF
+                executeSingleCapture(capture, restoreScreen, onPhotoCaptured)
+            }, 200L)
+        } else {
+            capture.flashMode = if (hasPhysicalFlash) flash.mode else ImageCapture.FLASH_MODE_OFF
+            executeSingleCapture(capture, onComplete = null, onPhotoCaptured)
+        }
+    }
+
+    private fun finishPhotoboothSession(presetName: String) {
+        isPhotoboothActive = false
+        binding.shutterButton.isEnabled = true
+        binding.countdownLabel.visibility = View.GONE
+        setStatus(R.string.status_ready)
+
+        val paths = ArrayList(boothFiles.map { it.absolutePath })
+        val intent = Intent(this, PhotoboothActivity::class.java).apply {
+            putStringArrayListExtra(PhotoboothActivity.EXTRA_POSE_PATHS, paths)
+            putExtra(PhotoboothActivity.EXTRA_PRESET_NAME, presetName)
+        }
+        startActivity(intent)
+    }
+
+    // --- Double Exposure Mode -----------------------------------------------
+
+    private var doubleExposureBaseBitmap: Bitmap? = null
+
+    private fun handleDoubleExposureShutter() {
+        if (doubleExposureBaseBitmap == null) {
+            captureDoubleExposureShot1()
+        } else {
+            captureDoubleExposureShot2()
+        }
+    }
+
+    private fun captureDoubleExposureShot1() {
+        val capture = imageCapture ?: return
+        val preset = (if (surpriseMode) rollRandomPreset() else activePreset) ?: return
+
+        binding.shutterButton.isEnabled = false
+        setStatus(R.string.status_saving)
+
+        try {
+            shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+        } catch (e: Exception) {
+            // Ignored
+        }
+
+        val isFront = isFrontCamera()
+        val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
+        val useScreenFlash = (isFront || !hasPhysicalFlash) && (flash != FlashChoice.OFF)
+
+        val onPhotoCaptured: (Bitmap, Int, Boolean) -> Unit = { rawBitmap, rotation, isFrontCam ->
+            val uprightW = if (rotation == 90 || rotation == 270) rawBitmap.height else rawBitmap.width
+            val uprightH = if (rotation == 90 || rotation == 270) rawBitmap.width else rawBitmap.height
+
+            val renderer = ShaderRenderer(uprightW, uprightH)
+            val filtered = try {
+                renderer.render(rawBitmap, Random.nextFloat() * 100f, preset, rotation, isFrontCam)
+            } catch (e: RuntimeException) {
+                Log.e(TAG, "Double exposure base filter failed", e)
+                rawBitmap
+            } finally {
+                renderer.close()
+            }
+
+            if (filtered !== rawBitmap) rawBitmap.recycle()
+            doubleExposureBaseBitmap = filtered
+
+            runOnUiThread {
+                binding.doubleExposureGhostOverlay.setImageBitmap(filtered)
+                binding.doubleExposureGhostOverlay.visibility = View.VISIBLE
+                binding.doubleExposureGhostOverlay.alpha = 0.45f
+
+                binding.doubleExposureBanner.visibility = View.VISIBLE
+                binding.doubleExposureBannerText.text = "EXPOSURE 2 OF 2 · TAP TO RETAKE"
+
+                setStatus(R.string.double_exposure_shot1_captured)
+                binding.shutterButton.isEnabled = true
+                toast(getString(R.string.double_exposure_shot1_captured))
+            }
+        }
+
+        if (useScreenFlash) {
+            val window = window
+            val prevBrightness = window.attributes.screenBrightness
+            val lp = window.attributes
+            lp.screenBrightness = 1.0f
+            window.attributes = lp
+            binding.screenFlashOverlay.visibility = View.VISIBLE
+            binding.screenFlashOverlay.alpha = 1.0f
+
+            val restoreScreen = {
+                runOnUiThread {
+                    binding.screenFlashOverlay.visibility = View.GONE
+                    val resetLp = window.attributes
+                    resetLp.screenBrightness = prevBrightness
+                    window.attributes = resetLp
+                }
+            }
+
+            binding.screenFlashOverlay.postDelayed({
+                capture.flashMode = ImageCapture.FLASH_MODE_OFF
+                executeSingleCapture(capture, restoreScreen, onPhotoCaptured)
+            }, 200L)
+        } else {
+            capture.flashMode = if (hasPhysicalFlash) flash.mode else ImageCapture.FLASH_MODE_OFF
+            executeSingleCapture(capture, onComplete = null, onPhotoCaptured)
+        }
+    }
+
+    private fun captureDoubleExposureShot2() {
+        val base = doubleExposureBaseBitmap ?: return
+        val capture = imageCapture ?: return
+        val preset = (if (surpriseMode) rollRandomPreset() else activePreset) ?: return
+
+        binding.shutterButton.isEnabled = false
+        setStatus(R.string.status_saving)
+
+        try {
+            shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+        } catch (e: Exception) {
+            // Ignored
+        }
+
+        val isFront = isFrontCamera()
+        val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
+        val useScreenFlash = (isFront || !hasPhysicalFlash) && (flash != FlashChoice.OFF)
+
+        val onPhotoCaptured: (Bitmap, Int, Boolean) -> Unit = { rawBitmap, rotation, isFrontCam ->
+            val uprightW = if (rotation == 90 || rotation == 270) rawBitmap.height else rawBitmap.width
+            val uprightH = if (rotation == 90 || rotation == 270) rawBitmap.width else rawBitmap.height
+
+            val renderer = ShaderRenderer(uprightW, uprightH)
+            val filteredOverlay = try {
+                renderer.render(rawBitmap, Random.nextFloat() * 100f, preset, rotation, isFrontCam)
+            } catch (e: RuntimeException) {
+                Log.e(TAG, "Double exposure overlay filter failed", e)
+                rawBitmap
+            } finally {
+                renderer.close()
+            }
+
+            if (filteredOverlay !== rawBitmap) rawBitmap.recycle()
+
+            // Composite base and overlay with analog SCREEN blending
+            val composite = DoubleExposureCompositor.blend(
+                base = base,
+                overlay = filteredOverlay,
+                method = DoubleExposureCompositor.BlendMethod.SCREEN
+            )
+
+            val finalPhoto = OverlayCompositor.compose(composite, preset, Date())
+            if (finalPhoto !== composite) composite.recycle()
+
+            saveToGallery(finalPhoto, preset, revealName = false)
+            finalPhoto.recycle()
+
+            base.recycle()
+            filteredOverlay.recycle()
+            doubleExposureBaseBitmap = null
+
+            runOnUiThread {
+                binding.doubleExposureGhostOverlay.visibility = View.GONE
+                binding.doubleExposureBanner.visibility = View.GONE
+                binding.shutterButton.isEnabled = true
+                setStatus(R.string.double_exposure_title)
+                toast(getString(R.string.double_exposure_saved))
+            }
+        }
+
+        if (useScreenFlash) {
+            val window = window
+            val prevBrightness = window.attributes.screenBrightness
+            val lp = window.attributes
+            lp.screenBrightness = 1.0f
+            window.attributes = lp
+            binding.screenFlashOverlay.visibility = View.VISIBLE
+            binding.screenFlashOverlay.alpha = 1.0f
+
+            val restoreScreen = {
+                runOnUiThread {
+                    binding.screenFlashOverlay.visibility = View.GONE
+                    val resetLp = window.attributes
+                    resetLp.screenBrightness = prevBrightness
+                    window.attributes = resetLp
+                }
+            }
+
+            binding.screenFlashOverlay.postDelayed({
+                capture.flashMode = ImageCapture.FLASH_MODE_OFF
+                executeSingleCapture(capture, restoreScreen, onPhotoCaptured)
+            }, 200L)
+        } else {
+            capture.flashMode = if (hasPhysicalFlash) flash.mode else ImageCapture.FLASH_MODE_OFF
+            executeSingleCapture(capture, onComplete = null, onPhotoCaptured)
+        }
+    }
+
+    private fun resetDoubleExposure() {
+        doubleExposureBaseBitmap?.recycle()
+        doubleExposureBaseBitmap = null
+        runOnUiThread {
+            binding.doubleExposureGhostOverlay.visibility = View.GONE
+            binding.doubleExposureBanner.visibility = View.GONE
+            binding.shutterButton.isEnabled = true
+            if (cameraMode == CameraMode.DOUBLE) {
+                setStatus(R.string.double_exposure_title)
+            }
+        }
     }
 
     private fun saveToGallery(bitmap: Bitmap, preset: FilterPreset, revealName: Boolean = false) {
@@ -2002,6 +2575,19 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
+        if (cameraMode == CameraMode.DOUBLE) {
+            resetDoubleExposure()
+        }
+        if (isPhotoboothActive) {
+            isPhotoboothActive = false
+            binding.shutterButton.isEnabled = true
+            binding.countdownLabel.visibility = View.GONE
+        }
+        try {
+            camera?.cameraControl?.enableTorch(false)
+        } catch (e: Exception) {
+            // Ignored on teardown
+        }
         if (::horizonSensorDetector.isInitialized) {
             horizonSensorDetector.stop()
         }
@@ -2027,6 +2613,11 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
+        try {
+            shutterSound.release()
+        } catch (e: Exception) {
+            // Ignored
+        }
         if (::videoRecordingManager.isInitialized) {
             videoRecordingManager.release()
         }

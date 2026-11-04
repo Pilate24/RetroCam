@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 1990s Neon: Translucent cyber chip -->
+<shape xmlns:android="http://schemas.android.com/apk/res/android"
+    android:shape="rectangle">
+    <solid android:color="#B3003640" />
+    <stroke
+        android:width="1dp"
+        android:color="#8000E5FF" />
+    <corners android:radius="6dp" />
+</shape>

@@ -32,6 +32,7 @@ def pair(label, pattern, text_a, pattern_b, text_b):
 pair("fade gain", r"1.0 - fade \* ([\d.]+)\)", shader, r"1 - fd \* ([\d.]+)\)", sim)
 pair("fade lift", r"float3\(fade \* ([\d.]+)\)", shader, r"\+ fd \* ([\d.]+) for", sim)
 pair("temperature", r"temperature \* ([\d.]+);", shader, r"t \* ([\d.]+), b", sim)
+pair("tint green", r"tint \* ([\d.]+);", shader, r"ti \* ([\d.]+), r", sim)
 pair("shoulder knee", r"const float knee = ([\d.]+);\s*\n\s*const float span", shader,
      r"knee, span = ([\d.]+),", sim)
 pair("toe weight", r"smoothstep\(float3\(0.0\), float3\(([\d.]+)\)", shader,

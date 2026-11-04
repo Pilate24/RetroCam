@@ -91,7 +91,7 @@ def apply(preset, rgb):
     t = norm(preset, "temperature")
     r, b = r + t * 0.45, b - t * 0.45
     ti = norm(preset, "tint")
-    g, r, b = g + ti * 0.36, r - ti * 0.13, b - ti * 0.13
+    g, r, b = g + ti * 0.26, r - ti * 0.09, b - ti * 0.09
 
     # 5. tone curve
     raw_c = preset.get("contrast", 0)
