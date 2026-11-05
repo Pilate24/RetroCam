@@ -23,6 +23,9 @@ class ProCameraManager {
 
         data class ShutterPreset(val label: String, val nanos: Long)
         val COMMON_SHUTTERS = listOf(
+            ShutterPreset("1/8000", 125_000L),
+            ShutterPreset("1/4000", 250_000L),
+            ShutterPreset("1/2000", 500_000L),
             ShutterPreset("1/1000", 1_000_000L),
             ShutterPreset("1/500", 2_000_000L),
             ShutterPreset("1/250", 4_000_000L),
@@ -33,7 +36,12 @@ class ProCameraManager {
             ShutterPreset("1/8", 125_000_000L),
             ShutterPreset("1/4", 250_000_000L),
             ShutterPreset("1/2", 500_000_000L),
-            ShutterPreset("1s", 1_000_000_000L)
+            ShutterPreset("1s", 1_000_000_000L),
+            ShutterPreset("2s", 2_000_000_000L),
+            ShutterPreset("4s", 4_000_000_000L),
+            ShutterPreset("8s", 8_000_000_000L),
+            ShutterPreset("15s", 15_000_000_000L),
+            ShutterPreset("30s", 30_000_000_000L)
         )
 
         data class WbPreset(val label: String, val mode: Int, val kelvin: String)
@@ -72,6 +80,15 @@ class ProCameraManager {
 
     var selectedAperture: Float? = null
         private set
+
+    // Auto Exposure / Focus Locks & Pro Features
+    var isAeLocked: Boolean = false
+        private set
+    var isAfLocked: Boolean = false
+        private set
+    var isFocusPeakingEnabled: Boolean = false
+    var isHistogramEnabled: Boolean = false
+    var isRawCaptureEnabled: Boolean = false
 
     // Hardware Sensor Capabilities
     var isoRange: Range<Int> = Range(100, 3200)
@@ -123,7 +140,9 @@ class ProCameraManager {
             isManualIso = false
         } else {
             isManualIso = true
-            manualIso = iso.coerceIn(isoRange.lower, isoRange.upper)
+            val lower = try { isoRange.lower ?: 50 } catch (e: Throwable) { 50 }
+            val upper = try { isoRange.upper ?: 6400 } catch (e: Throwable) { 6400 }
+            manualIso = iso.coerceIn(lower, upper)
         }
         camera?.let { apply(it) }
     }
@@ -133,7 +152,9 @@ class ProCameraManager {
             isManualShutter = false
         } else {
             isManualShutter = true
-            manualShutterNanos = nanos.coerceIn(shutterRange.lower, shutterRange.upper)
+            val lower = try { shutterRange.lower ?: 100_000L } catch (e: Throwable) { 100_000L }
+            val upper = try { shutterRange.upper ?: 30_000_000_000L } catch (e: Throwable) { 30_000_000_000L }
+            manualShutterNanos = nanos.coerceIn(lower, upper)
         }
         camera?.let { apply(it) }
     }
@@ -169,11 +190,35 @@ class ProCameraManager {
         camera?.let { apply(it) }
     }
 
+    fun toggleAeLock(camera: Camera?): Boolean {
+        isAeLocked = !isAeLocked
+        camera?.let { apply(it) }
+        return isAeLocked
+    }
+
+    fun toggleAfLock(camera: Camera?): Boolean {
+        isAfLocked = !isAfLocked
+        camera?.let { apply(it) }
+        return isAfLocked
+    }
+
+    fun setAeLock(locked: Boolean, camera: Camera?) {
+        isAeLocked = locked
+        camera?.let { apply(it) }
+    }
+
+    fun setAfLock(locked: Boolean, camera: Camera?) {
+        isAfLocked = locked
+        camera?.let { apply(it) }
+    }
+
     fun resetToAuto(camera: Camera?) {
         isManualIso = false
         isManualShutter = false
         isManualFocus = false
         isManualWb = false
+        isAeLocked = false
+        isAfLocked = false
         wbMode = CaptureRequest.CONTROL_AWB_MODE_AUTO
         evIndex = 0
         camera?.let { apply(it) }
@@ -185,13 +230,14 @@ class ProCameraManager {
             val camera2Control = Camera2CameraControl.from(camera.cameraControl)
             val builder = CaptureRequestOptions.Builder()
 
-            // 1. Exposure (ISO & Shutter)
+            // 1. Exposure (ISO & Shutter) & AE Lock
             if (isManualIso || isManualShutter) {
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_OFF)
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_SENSITIVITY, manualIso)
                 builder.setCaptureRequestOption(CaptureRequest.SENSOR_EXPOSURE_TIME, manualShutterNanos)
             } else {
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_MODE, CaptureRequest.CONTROL_AE_MODE_ON)
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AE_LOCK, isAeLocked)
                 try {
                     camera.cameraControl.setExposureCompensationIndex(evIndex)
                 } catch (e: Exception) {
@@ -199,14 +245,16 @@ class ProCameraManager {
                 }
             }
 
-            // 2. Focus
-            if (isManualFocus && isManualFocusSupported) {
+            // 2. Focus & AF Lock
+            if (isAfLocked) {
+                builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_AUTO)
+            } else if (isManualFocus && isManualFocusSupported) {
                 builder.setCaptureRequestOption(CaptureRequest.CONTROL_AF_MODE, CaptureRequest.CONTROL_AF_MODE_OFF)
                 builder.setCaptureRequestOption(CaptureRequest.LENS_FOCUS_DISTANCE, manualFocusDistance)
             } else {
                 builder.setCaptureRequestOption(
                     CaptureRequest.CONTROL_AF_MODE,
-                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_VIDEO
+                    CaptureRequest.CONTROL_AF_MODE_CONTINUOUS_PICTURE
                 )
             }
 
@@ -229,6 +277,28 @@ class ProCameraManager {
         } catch (e: Exception) {
             Log.w(TAG, "Error applying pro camera settings", e)
         }
+    }
+
+    fun createMetadata(
+        presetId: String,
+        isLongExp: Boolean = false,
+        longExpMode: String? = null,
+        longExpDuration: Float? = null,
+        frameCount: Int = 1
+    ): com.retrocam.app.pro.ProPhotoMetadata {
+        return com.retrocam.app.pro.ProPhotoMetadata(
+            iso = if (isManualIso) manualIso else null,
+            shutterNanos = if (isManualShutter) manualShutterNanos else null,
+            aperture = selectedAperture ?: availableApertures.firstOrNull(),
+            isManualWb = isManualWb,
+            wbSummary = getWbSummary(),
+            evIndex = evIndex,
+            presetId = presetId,
+            isLongExposure = isLongExp,
+            longExposureMode = longExpMode,
+            longExposureDurationSec = longExpDuration,
+            frameCount = frameCount
+        )
     }
 
     fun getIsoSummary(): String = if (isManualIso) "$manualIso" else "AUTO"

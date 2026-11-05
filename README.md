@@ -1,13 +1,38 @@
-# RetroCam v1.5.0
+# RetroCam v1.6.0
 
 CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic retro film camera for Android 13+ (minSdk 33).
 
-**[Download the Latest APK (v1.5.0)](https://github.com/Pilate24/RetroCam/releases/download/v1.5.0/RetroCam-v1.5.0.apk)** — Sideload directly to any Android 13+ device.
+**[Download the Latest APK (v1.6.0)](https://github.com/Pilate24/RetroCam/releases/download/v1.6.0/RetroCam-v1.6.0.apk)** — Sideload directly to any Android 13+ device.
 
 ---
 
-## What's New in v1.5.0
+## What's New in v1.6.0
 
+- 🖼️ **Full-Featured Retro Gallery & Album Manager**:
+  - **Single & Batch Deletion**: Instant deletion with confirmation dialogs directly from the full-screen photo viewer or in multi-select mode from the gallery grid, cleanly removing files from device storage (`MediaStore`) and updating favorites and trips.
+  - **Single & Batch Sharing**: Share single or multiple photos and videos simultaneously with standard Android Sharesheet (`ACTION_SEND` and `ACTION_SEND_MULTIPLE`) with read URI permissions.
+  - **Folder & Album Filter Bar**: Tactile retro horizontal chip selector to filter by **All**, **Photos**, **Videos**, **Long Exp**, **Booth**, **RAW**, **Remastered**, and **Favorites**, displaying live item counts per folder and tailored empty states.
+  - **Multi-Selection Mode**: Long-press any photo or tap "Select" to enter multi-select mode with dimming overlays, amber checkmark circles, item counter header, "Select All" / "Deselect All", batch share, and batch delete.
+  - **Photo Favorites**: Mark and unmark shots as favorites with one tap on the heart icon (`FavoriteStore`); favorite items display a dedicated badge on thumbnails and are grouped in the Favorites folder.
+  - **Photo Details Inspector**: One-tap EXIF and storage details sheet showing file name, resolution ($W \times H$), file size (KB/MB), storage directory (`Pictures/RetroCam`), and shot category.
+  - **Immersive Full-Screen Viewer**: Tap anywhere on the photo to toggle toolbars on/off for distraction-free viewing, with shortcuts to AI Remaster, Share, Favorite, Details, and Delete.
+- 📸 **Pro Camera Mode for Photos (`PRO PHOTO`)**: Full manual camera control for still photography:
+  - **Expanded Shutter Speeds**: `1/8000s`, `1/4000s`, `1/2000s`, `1/1000s`, `1/500s`, `1/250s`, `1/125s`, `1/60s`, `1/30s`, `1/15s`, `1/8s`, `1/4s`, `1/2s`, `1s`, `2s`, `4s`, `8s`, `15s`, `30s` + fine continuous slider.
+  - **Manual ISO Sensitivity**: `50`, `100`, `200`, `400`, `800`, `1600`, `3200`, `6400` + fine slider.
+  - **Manual Focus Rack & Distance Readout**: Smooth rack from `∞ (Infinity)` to `Macro` with real-time subject distance in meters.
+  - **Exposure Value (EV)**: Manual exposure compensation from `-3.0 EV` to `+3.0 EV`.
+  - **White Balance (AWB & Kelvin)**: `2800K` (Incandescent), `4000K` (Fluorescent), `5500K` (Daylight), `6500K` (Cloudy), `7500K` (Shade), and `AUTO`.
+  - **Auto Exposure Lock (AE-L) & Auto Focus Lock (AF-L)**: One-tap tactile locks to hold exposure and focus when recomposing shots.
+  - **Focus Peaking**: Real-time high-frequency edge gradient detection highlighting sharp in-focus contours in vibrant neon mint green.
+  - **Live RGB & Luminance Histogram**: 256-bin hardware-accelerated real-time histogram overlay with instant highlight clipping and shadow crushing alerts.
+  - **RAW (DNG) Digital Negative + JPEG**: Capture uncompressed digital negatives alongside developed retro film photos with rich EXIF metadata.
+- 🌌 **Computational & Hardware Long Exposure Mode (`LONG EXP`)**:
+  - **Light Trails**: Captures moving traffic streaks, sparklers, and fireworks using maximum-intensity luminance accumulation while preserving dark backgrounds.
+  - **Silky Water / Motion Blur**: Simulates optical Neutral Density (ND) filters via temporal moving-average frame blending, rendering waterfalls, ocean waves, and crowd motion as silky ethereal blurs while static structures remain tack-sharp.
+  - **Star Trails**: Noise-reduced light accumulation for night skies and astrophotography.
+  - **Classic Timed Bulb**: Manual or preset shutter exposures with durations: `1s`, `2s`, `3s`, `5s`, `10s`, `15s`, `30s`, and `BULB` (infinite manual).
+  - **Live Viewfinder Exposure Progress**: Watch light streaks and silky motion develop in real-time directly on the viewfinder.
+  - **Interactive Long Exposure HUD**: Real-time progress bar, elapsed timer countdown, accumulated frame counter, steady-hold guidance, and an instant "STOP EXPOSURE" button.
 - 🎨 **Retro Camera Body Themes (Skeuomorphic Skins)**: Real-time customization of camera body textures, dials, and shutter buttons across 4 iconic retro eras (1970s Classic, 1990s Translucent Neon, Disposable Cardboard Wrap, Golden Brass Rangefinder).
 - 🎞️ **4-Shot Photobooth Film Strip Maker**: Automated 4-pose photo booth with timed countdowns, flash support, and 5 vintage border card themes.
 - 🎭 **Analog Double Exposure Mode (MX)**: Optical screen exposure composite with live viewfinder ghost overlay and instant retake banner.
@@ -99,8 +124,8 @@ CameraX + Android Graphics Shading Language (AGSL `RuntimeShader`) authentic ret
 | **Compare Ratios Button** | View simultaneous 4:3, 4:5, and 9:16 framing boundaries on the live viewfinder |
 | **Guides Button** | Toggle Rule-of-Thirds, Symmetry, Horizon Level, Portrait Silhouette, Scrim, and Face Brackets |
 | **Camera Skin Button** | Tap top-bar palette icon or overflow menu to switch between 4 skeuomorphic retro camera bodies |
-| **Mode Switcher** | Switch between `PHOTO`, `BOOTH` (4-Cut Film Strip), `DOUBLE` (MX Double Exposure), `VIDEO`, and `RAW VIDEO` |
-| **RAW Control Bar** | Tap `ISO`, `S`, `EV`, `FOCUS`, or `WB` chips to open the fine-tuning slider and quick presets |
+| **Mode Switcher** | Switch between `PHOTO`, `PRO PHOTO`, `LONG EXP`, `BOOTH` (4-Cut Film Strip), `DOUBLE` (MX Double Exposure), `VIDEO`, and `RAW VIDEO` |
+| **Pro / RAW Control Bar** | Tap `ISO`, `S`, `EV`, `FOCUS`, `WB`, `AE-L`, `AF-L`, `PEAK`, `HISTO`, `RAW`, or `LONG EXP` chips to adjust parameters, toggle locks, or view live histogram |
 | **Tap Viewfinder** | Focus and meter on that coordinate |
 | **Pinch Viewfinder** | Smooth optical/digital zoom clamped to sensor limits |
 | **Double Tap Viewfinder** | Quick toggle between 1× wide and 2× crop |

@@ -46,6 +46,12 @@ import androidx.camera.lifecycle.ProcessCameraProvider
 import com.retrocam.app.video.VideoFps
 import com.retrocam.app.video.VideoQuality
 import com.retrocam.app.video.ProCameraManager
+import com.retrocam.app.pro.LongExposureEngine
+import com.retrocam.app.pro.LongExposureMode
+import com.retrocam.app.pro.HistogramAnalyzer
+import com.retrocam.app.pro.FocusPeakingDetector
+import com.retrocam.app.pro.RawDngExporter
+import com.retrocam.app.pro.ProPhotoMetadata
 import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.core.app.ActivityCompat
@@ -98,15 +104,16 @@ import kotlin.random.Random
 
 class MainActivity : AppCompatActivity() {
 
-    enum class CameraMode { PHOTO, VIDEO, RAW_VIDEO, BOOTH, DOUBLE }
+    enum class CameraMode { PHOTO, PRO_PHOTO, LONG_EXP, BOOTH, DOUBLE, VIDEO, RAW_VIDEO }
 
-    enum class ProParam { ISO, SHUTTER, EV, FOCUS, WB }
+    enum class ProParam { ISO, SHUTTER, EV, FOCUS, WB, LONG_EXP }
 
     private lateinit var binding: ActivityMainBinding
     private lateinit var cameraExecutor: ExecutorService
     private lateinit var videoRecordingManager: VideoRecordingManager
     private lateinit var tripRepository: TripRepository
     private val proCameraManager = ProCameraManager()
+    private val longExposureEngine = LongExposureEngine()
     private var activeProParam: ProParam? = null
     private var activeSkin = CameraSkin.DEFAULT
 
@@ -296,39 +303,39 @@ class MainActivity : AppCompatActivity() {
 
     private fun setUpModeSelector() {
         binding.modePhoto.setOnClickListener {
-            if (cameraMode != CameraMode.PHOTO) {
-                switchToMode(CameraMode.PHOTO)
-            }
+            if (cameraMode != CameraMode.PHOTO) switchToMode(CameraMode.PHOTO)
+        }
+
+        binding.modeProPhoto.setOnClickListener {
+            if (cameraMode != CameraMode.PRO_PHOTO) switchToMode(CameraMode.PRO_PHOTO)
+        }
+
+        binding.modeLongExp.setOnClickListener {
+            if (cameraMode != CameraMode.LONG_EXP) switchToMode(CameraMode.LONG_EXP)
         }
 
         binding.modeVideo.setOnClickListener {
-            if (cameraMode != CameraMode.VIDEO) {
-                switchToMode(CameraMode.VIDEO)
-            }
+            if (cameraMode != CameraMode.VIDEO) switchToMode(CameraMode.VIDEO)
         }
 
         binding.modeRawVideo.setOnClickListener {
-            if (cameraMode != CameraMode.RAW_VIDEO) {
-                switchToMode(CameraMode.RAW_VIDEO)
-            }
+            if (cameraMode != CameraMode.RAW_VIDEO) switchToMode(CameraMode.RAW_VIDEO)
         }
 
         binding.modeBooth.setOnClickListener {
-            if (cameraMode != CameraMode.BOOTH) {
-                switchToMode(CameraMode.BOOTH)
-            }
+            if (cameraMode != CameraMode.BOOTH) switchToMode(CameraMode.BOOTH)
         }
 
         binding.modeDouble.setOnClickListener {
-            if (cameraMode != CameraMode.DOUBLE) {
-                switchToMode(CameraMode.DOUBLE)
-            }
+            if (cameraMode != CameraMode.DOUBLE) switchToMode(CameraMode.DOUBLE)
         }
     }
 
     private fun updateModePills(mode: CameraMode) {
         val selectedPill = when (mode) {
             CameraMode.PHOTO -> binding.modePhoto
+            CameraMode.PRO_PHOTO -> binding.modeProPhoto
+            CameraMode.LONG_EXP -> binding.modeLongExp
             CameraMode.BOOTH -> binding.modeBooth
             CameraMode.DOUBLE -> binding.modeDouble
             CameraMode.VIDEO -> binding.modeVideo
@@ -337,6 +344,8 @@ class MainActivity : AppCompatActivity() {
 
         val allPills = listOf(
             binding.modePhoto,
+            binding.modeProPhoto,
+            binding.modeLongExp,
             binding.modeBooth,
             binding.modeDouble,
             binding.modeVideo,
@@ -356,7 +365,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun switchToMode(mode: CameraMode) {
-        if (videoRecordingManager.isRecording) return
+        if (videoRecordingManager.isRecording || longExposureEngine.isExposing) return
         val prevMode = cameraMode
         cameraMode = mode
         updateModePills(mode)
@@ -364,12 +373,19 @@ class MainActivity : AppCompatActivity() {
         if (prevMode == CameraMode.DOUBLE && mode != CameraMode.DOUBLE) {
             resetDoubleExposure()
         }
+        if (prevMode == CameraMode.LONG_EXP && mode != CameraMode.LONG_EXP) {
+            binding.longExposureHud.visibility = View.GONE
+        }
 
-        if (mode == CameraMode.PHOTO || mode == CameraMode.BOOTH || mode == CameraMode.DOUBLE) {
+        val isPro = (mode == CameraMode.PRO_PHOTO || mode == CameraMode.LONG_EXP || mode == CameraMode.RAW_VIDEO)
+
+        if (mode == CameraMode.PHOTO || mode == CameraMode.PRO_PHOTO || mode == CameraMode.LONG_EXP || mode == CameraMode.BOOTH || mode == CameraMode.DOUBLE) {
             binding.shutterButton.setBackgroundResource(activeSkin.shutterButtonRes)
             binding.shutterButton.contentDescription = when (mode) {
                 CameraMode.BOOTH -> "Start Photo Booth"
                 CameraMode.DOUBLE -> "Capture Double Exposure"
+                CameraMode.LONG_EXP -> "Start Long Exposure"
+                CameraMode.PRO_PHOTO -> "Capture Pro Photo"
                 else -> getString(R.string.shutter)
             }
 
@@ -385,18 +401,34 @@ class MainActivity : AppCompatActivity() {
             binding.topBar.visibility = View.VISIBLE
             binding.timerButton.visibility = if (mode == CameraMode.BOOTH || mode == CameraMode.DOUBLE) View.GONE else View.VISIBLE
             binding.videoQualityButton.visibility = View.GONE
-            binding.rawControlBar.visibility = View.GONE
-            binding.rawAdjustPanel.visibility = View.GONE
 
-            camera?.let { proCameraManager.resetToAuto(it) }
+            binding.rawControlBar.visibility = if (mode == CameraMode.PRO_PHOTO || mode == CameraMode.LONG_EXP) View.VISIBLE else View.GONE
+            if (!isPro) {
+                binding.rawAdjustPanel.visibility = View.GONE
+                activeProParam = null
+                highlightActiveProChip(null)
+                camera?.let { proCameraManager.resetToAuto(it) }
+            } else {
+                updateProChips()
+                camera?.let { proCameraManager.apply(it) }
+            }
+
             if (prevMode == CameraMode.VIDEO || prevMode == CameraMode.RAW_VIDEO) {
                 startCamera()
             }
-            if (mode == CameraMode.BOOTH) {
-                setStatus(R.string.photobooth_title)
-            } else if (mode == CameraMode.DOUBLE) {
-                resetDoubleExposure()
-                setStatus(R.string.double_exposure_title)
+
+            when (mode) {
+                CameraMode.BOOTH -> setStatus(R.string.photobooth_title)
+                CameraMode.DOUBLE -> {
+                    resetDoubleExposure()
+                    setStatus(R.string.double_exposure_title)
+                }
+                CameraMode.PRO_PHOTO -> setStatus(R.string.mode_pro_photo)
+                CameraMode.LONG_EXP -> {
+                    setStatus(R.string.long_exposure_title)
+                    selectProParam(ProParam.LONG_EXP)
+                }
+                else -> setStatus(R.string.status_ready)
             }
         } else if (mode == CameraMode.VIDEO) {
             binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
@@ -420,7 +452,7 @@ class MainActivity : AppCompatActivity() {
 
             checkAudioPermissionInfo()
             camera?.let { proCameraManager.resetToAuto(it) }
-            if (prevMode == CameraMode.PHOTO) {
+            if (prevMode != CameraMode.VIDEO && prevMode != CameraMode.RAW_VIDEO) {
                 startCamera()
             }
         } else { // CameraMode.RAW_VIDEO
@@ -444,7 +476,7 @@ class MainActivity : AppCompatActivity() {
             updateProChips()
 
             checkAudioPermissionInfo()
-            if (prevMode == CameraMode.PHOTO) {
+            if (prevMode != CameraMode.VIDEO && prevMode != CameraMode.RAW_VIDEO) {
                 startCamera()
             } else {
                 camera?.let { proCameraManager.apply(it) }
@@ -473,6 +505,44 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        binding.chipAeLock.setOnClickListener {
+            val locked = proCameraManager.toggleAeLock(camera)
+            toast(if (locked) "Auto Exposure (AE) Locked" else "Auto Exposure (AE) Unlocked")
+            updateProChips()
+        }
+
+        binding.chipAfLock.setOnClickListener {
+            val locked = proCameraManager.toggleAfLock(camera)
+            toast(if (locked) "Auto Focus (AF) Locked" else "Auto Focus (AF) Unlocked")
+            updateProChips()
+        }
+
+        binding.chipFocusPeak.setOnClickListener {
+            proCameraManager.isFocusPeakingEnabled = !proCameraManager.isFocusPeakingEnabled
+            toast(if (proCameraManager.isFocusPeakingEnabled) "Focus Peaking ON" else "Focus Peaking OFF")
+            if (!proCameraManager.isFocusPeakingEnabled) {
+                binding.focusPeakingOverlay.visibility = View.GONE
+            }
+            updateProChips()
+        }
+
+        binding.chipHisto.setOnClickListener {
+            proCameraManager.isHistogramEnabled = !proCameraManager.isHistogramEnabled
+            binding.proHistogramView.visibility = if (proCameraManager.isHistogramEnabled) View.VISIBLE else View.GONE
+            toast(if (proCameraManager.isHistogramEnabled) "Live Histogram ON" else "Live Histogram OFF")
+            updateProChips()
+        }
+
+        binding.chipRaw.setOnClickListener {
+            proCameraManager.isRawCaptureEnabled = !proCameraManager.isRawCaptureEnabled
+            toast(if (proCameraManager.isRawCaptureEnabled) "RAW (DNG) + JPG Enabled" else "Standard JPG")
+            updateProChips()
+        }
+
+        binding.chipLongExp.setOnClickListener {
+            selectProParam(ProParam.LONG_EXP)
+        }
+
         binding.buttonRawReset.setOnClickListener {
             camera?.let { cam ->
                 proCameraManager.resetToAuto(cam)
@@ -498,6 +568,10 @@ class MainActivity : AppCompatActivity() {
                 ProParam.EV -> proCameraManager.setEvIndex(0, camera)
                 ProParam.FOCUS -> proCameraManager.setFocusDistance(null, camera)
                 ProParam.WB -> proCameraManager.setWbMode(null, camera)
+                ProParam.LONG_EXP -> {
+                    longExposureEngine.targetDurationSeconds = 5.0f
+                    longExposureEngine.activeMode = LongExposureMode.LIGHT_TRAILS
+                }
             }
             updateProChips()
             configureAdjustPanelFor(param)
@@ -529,13 +603,14 @@ class MainActivity : AppCompatActivity() {
             ProParam.SHUTTER to binding.chipShutter,
             ProParam.EV to binding.chipEv,
             ProParam.FOCUS to binding.chipFocus,
-            ProParam.WB to binding.chipWb
+            ProParam.WB to binding.chipWb,
+            ProParam.LONG_EXP to binding.chipLongExp
         )
         for ((p, chip) in chips) {
             if (p == param) {
                 chip.setBackgroundResource(R.drawable.pro_chip_selected_bg)
             } else {
-                chip.setBackgroundResource(R.drawable.pro_chip_bg)
+                chip.setBackgroundResource(activeSkin.proChipBgRes)
             }
         }
     }
@@ -547,6 +622,27 @@ class MainActivity : AppCompatActivity() {
         binding.chipFocus.text = "FOCUS ${proCameraManager.getFocusSummary()}"
         binding.chipWb.text = "WB ${proCameraManager.getWbSummary()}"
         binding.chipAperture.text = proCameraManager.getApertureSummary()
+
+        binding.chipAeLock.text = if (proCameraManager.isAeLocked) "AE-L [LOCK]" else "AE-L"
+        binding.chipAeLock.setBackgroundResource(if (proCameraManager.isAeLocked) R.drawable.pro_chip_selected_bg else activeSkin.proChipBgRes)
+
+        binding.chipAfLock.text = if (proCameraManager.isAfLocked) "AF-L [LOCK]" else "AF-L"
+        binding.chipAfLock.setBackgroundResource(if (proCameraManager.isAfLocked) R.drawable.pro_chip_selected_bg else activeSkin.proChipBgRes)
+
+        binding.chipFocusPeak.text = if (proCameraManager.isFocusPeakingEnabled) "PEAK ON" else "PEAK"
+        binding.chipFocusPeak.setBackgroundResource(if (proCameraManager.isFocusPeakingEnabled) R.drawable.pro_chip_selected_bg else activeSkin.proChipBgRes)
+
+        binding.chipHisto.text = if (proCameraManager.isHistogramEnabled) "HISTO ON" else "HISTO"
+        binding.chipHisto.setBackgroundResource(if (proCameraManager.isHistogramEnabled) R.drawable.pro_chip_selected_bg else activeSkin.proChipBgRes)
+
+        binding.chipRaw.text = if (proCameraManager.isRawCaptureEnabled) "RAW ON" else "RAW"
+        binding.chipRaw.setBackgroundResource(if (proCameraManager.isRawCaptureEnabled) R.drawable.pro_chip_selected_bg else activeSkin.proChipBgRes)
+
+        val expLabel = if (longExposureEngine.targetDurationSeconds <= 0f) "BULB" else "${longExposureEngine.targetDurationSeconds.toInt()}s"
+        binding.chipLongExp.text = "EXP $expLabel"
+        if (activeProParam != ProParam.LONG_EXP) {
+            binding.chipLongExp.setBackgroundResource(activeSkin.proChipBgRes)
+        }
     }
 
     private fun configureAdjustPanelFor(param: ProParam) {
@@ -722,6 +818,57 @@ class MainActivity : AppCompatActivity() {
                     }
                 }
             }
+
+            ProParam.LONG_EXP -> {
+                val durationLabel = if (longExposureEngine.targetDurationSeconds <= 0f) "BULB" else "${longExposureEngine.targetDurationSeconds.toInt()}s"
+                binding.rawAdjustTitle.text = "LONG EXPOSURE: ${longExposureEngine.activeMode.title} ($durationLabel)"
+                updateAutoButtonState(false)
+
+                // 1. Long exposure modes
+                for (mode in LongExposureMode.entries) {
+                    val isSelected = longExposureEngine.activeMode == mode
+                    addPresetButton(mode.title, isSelected) {
+                        longExposureEngine.activeMode = mode
+                        toast("${mode.title}: ${mode.description}")
+                        configureAdjustPanelFor(ProParam.LONG_EXP)
+                        updateProChips()
+                    }
+                }
+
+                // 2. Duration presets
+                val durations = listOf(
+                    1f to "1s",
+                    2f to "2s",
+                    3f to "3s",
+                    5f to "5s",
+                    10f to "10s",
+                    15f to "15s",
+                    30f to "30s",
+                    0f to "BULB"
+                )
+                for ((sec, label) in durations) {
+                    val isSelected = longExposureEngine.targetDurationSeconds == sec
+                    addPresetButton(label, isSelected) {
+                        longExposureEngine.targetDurationSeconds = sec
+                        configureAdjustPanelFor(ProParam.LONG_EXP)
+                        updateProChips()
+                    }
+                }
+
+                // Slider for fine duration control
+                binding.rawSlider.valueFrom = 1f
+                binding.rawSlider.valueTo = 30f
+                binding.rawSlider.stepSize = 1f
+                binding.rawSlider.value = longExposureEngine.targetDurationSeconds.coerceIn(1f, 30f)
+                binding.rawSlider.addOnChangeListener { _, value, fromUser ->
+                    if (fromUser) {
+                        longExposureEngine.targetDurationSeconds = value
+                        val lbl = "${value.toInt()}s"
+                        binding.rawAdjustTitle.text = "LONG EXPOSURE: ${longExposureEngine.activeMode.title} ($lbl)"
+                        binding.chipLongExp.text = "EXP $lbl"
+                    }
+                }
+            }
         }
     }
 
@@ -792,11 +939,16 @@ class MainActivity : AppCompatActivity() {
     private fun setUpShutterAndControls() {
         binding.shutterButton.setOnClickListener {
             when (cameraMode) {
-                CameraMode.PHOTO -> takePhoto()
+                CameraMode.PHOTO, CameraMode.PRO_PHOTO -> takePhoto()
+                CameraMode.LONG_EXP -> handleLongExposureShutter()
                 CameraMode.BOOTH -> startPhotoboothSession()
                 CameraMode.DOUBLE -> handleDoubleExposureShutter()
                 CameraMode.VIDEO, CameraMode.RAW_VIDEO -> handleVideoRecordClick()
             }
+        }
+
+        binding.buttonStopExposure.setOnClickListener {
+            stopLongExposure()
         }
 
         binding.doubleExposureBanner.setOnClickListener {
@@ -1158,7 +1310,7 @@ class MainActivity : AppCompatActivity() {
                 provider.unbindAll()
                 hideCameraError()
 
-                if (cameraMode == CameraMode.PHOTO) {
+                if (!isVideoMode) {
                     bindPhotoUseCases(provider)
                 } else {
                     bindVideoUseCases(provider)
@@ -1166,7 +1318,7 @@ class MainActivity : AppCompatActivity() {
 
                 camera?.let { cam ->
                     proCameraManager.updateCapabilities(cam)
-                    if (cameraMode == CameraMode.RAW_VIDEO) {
+                    if (cameraMode == CameraMode.RAW_VIDEO || cameraMode == CameraMode.PRO_PHOTO || cameraMode == CameraMode.LONG_EXP) {
                         proCameraManager.apply(cam)
                         updateProChips()
                     }
@@ -1317,7 +1469,7 @@ class MainActivity : AppCompatActivity() {
 
     private fun updateFlashState() {
         val hasFlash = camera?.cameraInfo?.hasFlashUnit() == true
-        if (cameraMode == CameraMode.PHOTO) {
+        if (!isVideoMode) {
             try {
                 camera?.cameraControl?.enableTorch(false)
             } catch (e: Exception) {
@@ -1579,7 +1731,7 @@ class MainActivity : AppCompatActivity() {
 
         updateModePills(cameraMode)
 
-        if (cameraMode == CameraMode.PHOTO || cameraMode == CameraMode.BOOTH || cameraMode == CameraMode.DOUBLE) {
+        if (!isVideoMode) {
             binding.shutterButton.setBackgroundResource(skin.shutterButtonRes)
         }
 
@@ -1609,11 +1761,17 @@ class MainActivity : AppCompatActivity() {
             binding.chipFocus,
             binding.chipWb,
             binding.chipAperture,
+            binding.chipAeLock,
+            binding.chipAfLock,
+            binding.chipFocusPeak,
+            binding.chipHisto,
+            binding.chipRaw,
+            binding.chipLongExp,
             binding.buttonRawReset
         )
         for (chip in proChips) {
             chip.setBackgroundResource(skin.proChipBgRes)
-            if (chip != binding.buttonRawReset) {
+            if (chip != binding.buttonRawReset && chip != binding.chipLongExp) {
                 chip.setTextColor(skin.chipTextColor)
             } else {
                 chip.setTextColor(skin.accentColor)
@@ -1682,7 +1840,11 @@ class MainActivity : AppCompatActivity() {
     private fun startCountdown(remaining: Int) {
         if (remaining <= 0) {
             binding.countdownLabel.animate().alpha(0f).setDuration(150).start()
-            capturePhoto()
+            if (cameraMode == CameraMode.LONG_EXP) {
+                startLongExposure()
+            } else {
+                capturePhoto()
+            }
             return
         }
         binding.countdownLabel.text = remaining.toString()
@@ -1950,15 +2112,47 @@ class MainActivity : AppCompatActivity() {
             }
         }
 
+        // 1. Long exposure accumulation
+        if (longExposureEngine.isExposing) {
+            longExposureEngine.accumulateFrame(frameBitmap, imageRotation, isFront)
+        }
+
+        // 2. Real-time histogram analysis
+        if (proCameraManager.isHistogramEnabled && (cameraMode == CameraMode.PRO_PHOTO || cameraMode == CameraMode.LONG_EXP || cameraMode == CameraMode.RAW_VIDEO)) {
+            val histoData = HistogramAnalyzer.analyze(frameBitmap)
+            runOnUiThread {
+                binding.proHistogramView.updateHistogram(histoData)
+            }
+        }
+
+        // 3. Focus peaking edge overlay
+        if (proCameraManager.isFocusPeakingEnabled && proCameraManager.isManualFocus) {
+            val peakBitmap = FocusPeakingDetector.detectEdges(frameBitmap)
+            runOnUiThread {
+                binding.focusPeakingOverlay.visibility = View.VISIBLE
+                binding.focusPeakingOverlay.setImageBitmap(peakBitmap)
+            }
+        } else if (binding.focusPeakingOverlay.visibility == View.VISIBLE) {
+            runOnUiThread { binding.focusPeakingOverlay.visibility = View.GONE }
+        }
+
         val elapsedSeconds = (now - startTimeNanos) / 1_000_000_000f
         val layout = OverlayCompositor.layoutFor(uprightWidth, uprightHeight, preset)
         previewDate.time = System.currentTimeMillis()
         latestComposedWidth = layout.outputWidth
         latestComposedHeight = layout.outputHeight
 
+        val hwSourceBitmap = if (longExposureEngine.isExposing) {
+            longExposureEngine.getLivePreviewBitmap() ?: frameBitmap
+        } else {
+            frameBitmap
+        }
+        val hwRotation = if (longExposureEngine.isExposing) 0 else imageRotation
+        val hwFront = if (longExposureEngine.isExposing) false else isFront
+
         try {
-            renderer.renderHardware(frameBitmap, imageRotation, isFront, elapsedSeconds, preset) { hwBitmap ->
-                drawHardwareToSurface(hwBitmap, layout, uprightWidth, uprightHeight, imageRotation)
+            renderer.renderHardware(hwSourceBitmap, hwRotation, hwFront, elapsedSeconds, preset) { hwBitmap ->
+                drawHardwareToSurface(hwBitmap, layout, uprightWidth, uprightHeight, hwRotation)
 
                 if (isVideoMode && videoRecordingManager.isRecording) {
                     videoRecordingManager.onNewHardwareFrame(hwBitmap, layout, preset, previewDate)
@@ -2057,6 +2251,10 @@ class MainActivity : AppCompatActivity() {
 
     private fun takePhoto() {
         if (countingDown) return
+        if (cameraMode == CameraMode.LONG_EXP) {
+            handleLongExposureShutter()
+            return
+        }
         if (timerSeconds > 0) {
             countingDown = true
             binding.shutterButton.isEnabled = false
@@ -2073,6 +2271,10 @@ class MainActivity : AppCompatActivity() {
 
         binding.shutterButton.isEnabled = false
         setStatus(R.string.status_saving)
+
+        if (cameraMode == CameraMode.PRO_PHOTO) {
+            camera?.let { proCameraManager.apply(it) }
+        }
 
         val isFront = isFrontCamera()
         val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
@@ -2118,8 +2320,18 @@ class MainActivity : AppCompatActivity() {
         rawBitmap: Bitmap,
         rotation: Int,
         isFront: Boolean,
-        preset: FilterPreset
+        preset: FilterPreset,
+        metadata: ProPhotoMetadata? = null
     ) {
+        val meta = metadata ?: proCameraManager.createMetadata(preset.id)
+
+        // If RAW capture is enabled in Pro Photo mode, save uncompressed digital negative
+        if (proCameraManager.isRawCaptureEnabled && (cameraMode == CameraMode.PRO_PHOTO)) {
+            val uprightRaw = if (rotation != 0 || isFront) rotateBitmap(rawBitmap, rotation, isFront) else rawBitmap
+            RawDngExporter.saveRawDigitalNegative(contentResolver, uprightRaw, meta)
+            if (uprightRaw !== rawBitmap) uprightRaw.recycle()
+        }
+
         val uprightW = if (rotation == 90 || rotation == 270) rawBitmap.height else rawBitmap.width
         val uprightH = if (rotation == 90 || rotation == 270) rawBitmap.width else rawBitmap.height
 
@@ -2135,8 +2347,108 @@ class MainActivity : AppCompatActivity() {
         }
 
         val composed = OverlayCompositor.compose(filtered, preset, Date())
-        saveToGallery(composed, preset, revealName = surpriseMode)
+        saveToGallery(composed, preset, revealName = surpriseMode, metadata = meta)
         if (composed !== filtered) filtered.recycle()
+    }
+
+    // --- Long Exposure Capturing --------------------------------------------
+
+    private fun handleLongExposureShutter() {
+        if (longExposureEngine.isExposing) {
+            stopLongExposure()
+            return
+        }
+
+        if (countingDown) return
+        if (timerSeconds > 0) {
+            countingDown = true
+            binding.shutterButton.isEnabled = false
+            startCountdown(timerSeconds)
+            return
+        }
+
+        startLongExposure()
+    }
+
+    private fun startLongExposure() {
+        val preset = activePreset ?: return
+        binding.longExposureHud.visibility = View.VISIBLE
+        binding.longExpProgressBar.progress = 0
+        binding.longExpFramesText.text = "0 frames stacked"
+        val durStr = if (longExposureEngine.targetDurationSeconds <= 0f) "BULB" else "${longExposureEngine.targetDurationSeconds.toInt()}s"
+        binding.longExpTimerText.text = "EXPOSING · 0.0s / $durStr"
+        binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
+        binding.shutterButton.contentDescription = getString(R.string.stop_exposure)
+
+        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+
+        longExposureEngine.onProgressUpdate = { progress ->
+            runOnUiThread {
+                if (longExposureEngine.isExposing) {
+                    val elapsedSec = progress.elapsedMs / 1000f
+                    val targetSec = progress.targetDurationMs / 1000f
+                    binding.longExpTimerText.text = if (progress.isBulb) {
+                        String.format(Locale.US, "BULB · %02d:%02d", (elapsedSec / 60).toInt(), (elapsedSec % 60).toInt())
+                    } else {
+                        String.format(Locale.US, "EXPOSING · %.1fs / %.1fs", elapsedSec, targetSec)
+                    }
+                    binding.longExpFramesText.text = "${progress.frameCount} frames stacked"
+                    binding.longExpProgressBar.progress = (progress.progressRatio * 100).toInt()
+                }
+            }
+        }
+
+        longExposureEngine.onExposureCompleted = { finalBitmap ->
+            runOnUiThread {
+                finishAndSaveLongExposure(finalBitmap, preset)
+            }
+        }
+
+        longExposureEngine.startExposure()
+        setStatus(R.string.long_exposure_title)
+    }
+
+    private fun stopLongExposure() {
+        if (!longExposureEngine.isExposing) return
+        val preset = activePreset ?: return
+        val finalBitmap = longExposureEngine.finishExposure()
+        finishAndSaveLongExposure(finalBitmap, preset)
+    }
+
+    private fun finishAndSaveLongExposure(finalBitmap: Bitmap, preset: FilterPreset) {
+        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
+        binding.longExposureHud.visibility = View.GONE
+        binding.shutterButton.setBackgroundResource(activeSkin.shutterButtonRes)
+        binding.shutterButton.contentDescription = getString(R.string.shutter)
+        binding.shutterButton.isEnabled = true
+
+        val metadata = proCameraManager.createMetadata(
+            presetId = preset.id,
+            isLongExp = true,
+            longExpMode = longExposureEngine.activeMode.title,
+            longExpDuration = longExposureEngine.targetDurationSeconds,
+            frameCount = longExposureEngine.accumulatedFrameCount
+        )
+
+        val uprightW = finalBitmap.width
+        val uprightH = finalBitmap.height
+        val renderer = ShaderRenderer(uprightW, uprightH)
+        val filtered = try {
+            renderer.render(finalBitmap, Random.nextFloat() * 100f, preset, 0, false)
+        } catch (e: RuntimeException) {
+            Log.e(TAG, "Could not filter long exposure photo", e)
+            return
+        } finally {
+            finalBitmap.recycle()
+            renderer.close()
+        }
+
+        val composed = OverlayCompositor.compose(filtered, preset, Date())
+        saveToGallery(composed, preset, revealName = surpriseMode, metadata = metadata)
+        if (composed !== filtered) filtered.recycle()
+
+        toast(getString(R.string.pro_long_exp_saved, longExposureEngine.targetDurationSeconds, longExposureEngine.accumulatedFrameCount))
+        setStatus(R.string.status_ready)
     }
 
     private fun executeSingleCapture(
@@ -2462,7 +2774,7 @@ class MainActivity : AppCompatActivity() {
             val finalPhoto = OverlayCompositor.compose(composite, preset, Date())
             if (finalPhoto !== composite) composite.recycle()
 
-            saveToGallery(finalPhoto, preset, revealName = false)
+            saveToGallery(finalPhoto, preset, revealName = false, isDoubleExp = true)
             finalPhoto.recycle()
 
             base.recycle()
@@ -2519,10 +2831,22 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    private fun saveToGallery(bitmap: Bitmap, preset: FilterPreset, revealName: Boolean = false) {
+    private fun saveToGallery(
+        bitmap: Bitmap,
+        preset: FilterPreset,
+        revealName: Boolean = false,
+        metadata: ProPhotoMetadata? = null,
+        isDoubleExp: Boolean = false
+    ) {
         val stamp = SimpleDateFormat("yyyyMMdd_HHmmss", Locale.US).format(Date())
+        val namePrefix = when {
+            metadata?.isLongExposure == true -> "RetroCam_LongExp_"
+            isDoubleExp -> "RetroCam_Double_"
+            else -> "RetroCam_"
+        }
+        val displayName = "${namePrefix}${preset.id}_$stamp"
         val contentValues = ContentValues().apply {
-            put(MediaStore.MediaColumns.DISPLAY_NAME, "RetroCam_${preset.id}_$stamp")
+            put(MediaStore.MediaColumns.DISPLAY_NAME, displayName)
             put(MediaStore.MediaColumns.MIME_TYPE, "image/jpeg")
             put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/RetroCam")
         }
@@ -2537,9 +2861,11 @@ class MainActivity : AppCompatActivity() {
             bitmap.compress(Bitmap.CompressFormat.JPEG, 95, out)
         }
 
+        val meta = metadata ?: proCameraManager.createMetadata(preset.id)
+        RawDngExporter.injectExifMetadata(contentResolver, uri, meta)
+
         val activeTrip = tripRepository.getActiveTrip()
         if (activeTrip != null) {
-            val displayName = "RetroCam_${preset.id}_$stamp"
             tripRepository.addMediaToActiveTrip(
                 uri = uri,
                 displayName = displayName,
@@ -2577,6 +2903,12 @@ class MainActivity : AppCompatActivity() {
         super.onPause()
         if (cameraMode == CameraMode.DOUBLE) {
             resetDoubleExposure()
+        }
+        if (cameraMode == CameraMode.LONG_EXP && longExposureEngine.isExposing) {
+            longExposureEngine.cancelExposure()
+            binding.longExposureHud.visibility = View.GONE
+            binding.shutterButton.setBackgroundResource(activeSkin.shutterButtonRes)
+            binding.shutterButton.isEnabled = true
         }
         if (isPhotoboothActive) {
             isPhotoboothActive = false

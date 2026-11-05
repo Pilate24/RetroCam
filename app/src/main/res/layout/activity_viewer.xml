@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <FrameLayout xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:app="http://schemas.android.com/apk/res-auto"
+    xmlns:tools="http://schemas.android.com/tools"
     android:layout_width="match_parent"
     android:layout_height="match_parent"
     android:background="@android:color/black"
@@ -13,11 +14,13 @@
         android:contentDescription="@string/photo"
         android:scaleType="fitCenter" />
 
+    <!-- Top Bar: Back, Name, Info -->
     <FrameLayout
+        android:id="@+id/topBar"
         android:layout_width="match_parent"
         android:layout_height="56dp"
         android:layout_gravity="top"
-        android:background="#66000000">
+        android:background="#80000000">
 
         <ImageButton
             android:id="@+id/backButton"
@@ -37,34 +40,73 @@
             android:layout_gravity="center"
             android:ellipsize="middle"
             android:maxLines="1"
+            android:paddingStart="64dp"
+            android:paddingEnd="64dp"
             android:textColor="#FFFFFFFF"
-            android:textSize="14sp" />
+            android:textSize="14sp"
+            tools:text="RetroCam_kodak_gold.jpg" />
 
-        <LinearLayout
-            android:layout_width="wrap_content"
-            android:layout_height="match_parent"
+        <ImageButton
+            android:id="@+id/infoButton"
+            android:layout_width="48dp"
+            android:layout_height="48dp"
             android:layout_gravity="end|center_vertical"
-            android:orientation="horizontal">
-
-            <ImageButton
-                android:id="@+id/remasterButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="Remaster"
-                android:src="@drawable/ic_auto_remaster"
-                app:tint="@color/amber" />
-
-            <ImageButton
-                android:id="@+id/shareButton"
-                android:layout_width="48dp"
-                android:layout_height="48dp"
-                android:layout_marginEnd="6dp"
-                android:background="?android:attr/selectableItemBackgroundBorderless"
-                android:contentDescription="@string/share_photo"
-                android:src="@drawable/ic_share"
-                app:tint="#FFFFFFFF" />
-        </LinearLayout>
+            android:layout_marginEnd="6dp"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Photo Info"
+            android:src="@drawable/ic_more"
+            app:tint="#FFFFFFFF" />
     </FrameLayout>
+
+    <!-- Bottom Actions Toolbar: Favorite, Remaster, Share, Delete -->
+    <LinearLayout
+        android:id="@+id/bottomBar"
+        android:layout_width="match_parent"
+        android:layout_height="64dp"
+        android:layout_gravity="bottom"
+        android:background="#99000000"
+        android:gravity="center_vertical"
+        android:orientation="horizontal">
+
+        <ImageButton
+            android:id="@+id/favoriteButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Favorite"
+            android:src="@drawable/ic_favorite_border"
+            app:tint="@color/amber" />
+
+        <ImageButton
+            android:id="@+id/remasterButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="Remaster"
+            android:src="@drawable/ic_auto_remaster"
+            app:tint="@color/amber" />
+
+        <ImageButton
+            android:id="@+id/shareButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/share_photo"
+            android:src="@drawable/ic_share"
+            app:tint="#FFFFFFFF" />
+
+        <ImageButton
+            android:id="@+id/deleteButton"
+            android:layout_width="0dp"
+            android:layout_height="match_parent"
+            android:layout_weight="1"
+            android:background="?android:attr/selectableItemBackgroundBorderless"
+            android:contentDescription="@string/delete_button"
+            android:src="@drawable/ic_delete"
+            app:tint="#FF5252" />
+    </LinearLayout>
 
 </FrameLayout>
