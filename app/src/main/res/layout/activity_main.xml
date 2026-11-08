@@ -922,7 +922,8 @@
                 android:layout_height="66dp"
                 android:layout_gravity="center_horizontal"
                 android:background="@drawable/shutter_button"
-                android:contentDescription="@string/shutter" />
+                android:contentDescription="@string/shutter"
+                android:soundEffectsEnabled="false" />
 
             <ImageButton
                 android:id="@+id/flipCameraButton"

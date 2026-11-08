@@ -69,7 +69,6 @@ import com.retrocam.app.director.detector.HorizonSensorDetector
 import com.retrocam.app.director.engine.ShotDirectorEngine
 import com.retrocam.app.director.model.AspectRatioOption
 import com.retrocam.app.director.model.CameraCapabilities
-import android.media.MediaActionSound
 import com.retrocam.app.booth.PhotoboothActivity
 import com.retrocam.app.director.ui.ShotDirectorController
 import java.io.File
@@ -937,6 +936,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun setUpShutterAndControls() {
+        binding.shutterButton.isSoundEffectsEnabled = false
         binding.shutterButton.setOnClickListener {
             when (cameraMode) {
                 CameraMode.PHOTO, CameraMode.PRO_PHOTO -> takePhoto()
@@ -2380,8 +2380,6 @@ class MainActivity : AppCompatActivity() {
         binding.shutterButton.setBackgroundResource(R.drawable.shutter_video_record)
         binding.shutterButton.contentDescription = getString(R.string.stop_exposure)
 
-        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
-
         longExposureEngine.onProgressUpdate = { progress ->
             runOnUiThread {
                 if (longExposureEngine.isExposing) {
@@ -2416,7 +2414,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun finishAndSaveLongExposure(finalBitmap: Bitmap, preset: FilterPreset) {
-        shutterSound.play(MediaActionSound.SHUTTER_CLICK)
         binding.longExposureHud.visibility = View.GONE
         binding.shutterButton.setBackgroundResource(activeSkin.shutterButtonRes)
         binding.shutterButton.contentDescription = getString(R.string.shutter)
@@ -2481,7 +2478,6 @@ class MainActivity : AppCompatActivity() {
 
     private var isPhotoboothActive = false
     private val boothFiles = mutableListOf<File>()
-    private val shutterSound by lazy { MediaActionSound().apply { load(MediaActionSound.SHUTTER_CLICK) } }
 
     private fun startPhotoboothSession() {
         if (isPhotoboothActive) return
@@ -2551,11 +2547,6 @@ class MainActivity : AppCompatActivity() {
         boothDir: File
     ) {
         setStatus(R.string.status_saving)
-        try {
-            shutterSound.play(MediaActionSound.SHUTTER_CLICK)
-        } catch (e: Exception) {
-            // Ignored
-        }
 
         val isFront = isFrontCamera()
         val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
@@ -2661,12 +2652,6 @@ class MainActivity : AppCompatActivity() {
         binding.shutterButton.isEnabled = false
         setStatus(R.string.status_saving)
 
-        try {
-            shutterSound.play(MediaActionSound.SHUTTER_CLICK)
-        } catch (e: Exception) {
-            // Ignored
-        }
-
         val isFront = isFrontCamera()
         val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
         val useScreenFlash = (isFront || !hasPhysicalFlash) && (flash != FlashChoice.OFF)
@@ -2737,12 +2722,6 @@ class MainActivity : AppCompatActivity() {
 
         binding.shutterButton.isEnabled = false
         setStatus(R.string.status_saving)
-
-        try {
-            shutterSound.play(MediaActionSound.SHUTTER_CLICK)
-        } catch (e: Exception) {
-            // Ignored
-        }
 
         val isFront = isFrontCamera()
         val hasPhysicalFlash = camera?.cameraInfo?.hasFlashUnit() == true
@@ -2945,11 +2924,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onDestroy() {
         super.onDestroy()
-        try {
-            shutterSound.release()
-        } catch (e: Exception) {
-            // Ignored
-        }
         if (::videoRecordingManager.isInitialized) {
             videoRecordingManager.release()
         }
